@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-# src/database/models.py - Fixed Version
+# src/database/models.py - CLEANED VERSION
 """
 Database models and schema for Streaming Analytics Platform
-Fixed version resolving type annotation issues and None handling
+SQLAlchemy models only - API models moved to src/api/models.py
 """
 
 from datetime import datetime
@@ -26,280 +26,6 @@ from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 Base = declarative_base()
-
-# src/api/models.py
-"""
-Pydantic models for API request/response schemas
-"""
-
-from datetime import datetime, date
-from typing import Any
-from pydantic import BaseModel, Field, ConfigDict
-from enum import Enum
-
-
-class ProcessingStatus(str, Enum):
-    """Processing status enum"""
-    PENDING = "pending"
-    PROCESSING = "processing"  
-    COMPLETED = "completed"
-    FAILED = "failed"
-    SKIPPED = "skipped"
-
-
-class MetricType(str, Enum):
-    """Metric type enum"""
-    STREAMS = "streams"
-    PLAYS = "plays"
-    SAVES = "saves"
-    SHARES = "shares"
-    VIDEO_VIEWS = "video_views"
-    SOCIAL_INTERACTIONS = "social_interactions"
-    FITNESS_PLAYS = "fitness_plays"
-
-
-class DeviceType(str, Enum):
-    """Device type enum"""
-    MOBILE = "mobile"
-    DESKTOP = "desktop"
-    TABLET = "tablet"
-    TV = "tv"
-    UNKNOWN = "unknown"
-
-
-class SubscriptionType(str, Enum):
-    """Subscription type enum"""
-    FREE = "free"
-    PAID = "paid"
-    TRIAL = "trial"
-    UNKNOWN = "unknown"
-
-
-# Response Models
-class PlatformResponse(BaseModel):
-    """Platform information response"""
-    id: int
-    code: str
-    name: str
-    description: str | None = None
-    is_active: bool
-    file_patterns: list[str] | None = None
-    date_formats: list[str] | None = None
-    delimiter_type: str | None = None
-    encoding: str | None = None
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class ArtistResponse(BaseModel):
-    """Artist information response"""
-    id: int
-    name: str
-    name_normalized: str
-    external_ids: dict[str, Any] | None = None
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class TrackResponse(BaseModel):
-    """Track information response"""
-    id: int
-    title: str
-    title_normalized: str
-    isrc: str | None = None
-    album_name: str | None = None
-    duration_ms: int | None = None
-    genre: str | None = None
-    artist_id: int
-    artist_name: str | None = None
-    external_ids: dict[str, Any] | None = None
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class StreamingRecordResponse(BaseModel):
-    """Streaming record response"""
-    id: str
-    date: date
-    platform_code: str
-    platform_name: str
-    track_id: int | None = None
-    track_title: str | None = None
-    artist_name: str | None = None
-    metric_type: MetricType
-    metric_value: float
-    geography: str | None = None
-    device_type: DeviceType | None = None
-    subscription_type: SubscriptionType | None = None
-    context_type: str | None = None
-    user_demographic: dict[str, Any] | None = None
-    data_quality_score: float | None = None
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class QualitySummaryResponse(BaseModel):
-    """Data quality summary response"""
-    total_files_processed: int
-    average_quality_score: float
-    files_above_threshold: int
-    quality_threshold: float
-    platforms_analyzed: int
-    total_records_processed: int
-    last_updated: datetime
-
-
-class QualityDetailResponse(BaseModel):
-    """Detailed quality information"""
-    id: int
-    platform_code: str
-    platform_name: str
-    file_path: str | None = None
-    overall_score: float
-    completeness_score: float | None = None
-    consistency_score: float | None = None
-    validity_score: float | None = None
-    accuracy_score: float | None = None
-    issues_found: list[dict[str, Any]] | None = None
-    recommendations: list[str] | None = None
-    measured_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class ProcessingLogResponse(BaseModel):
-    """Processing log response"""
-    id: int
-    file_name: str
-    file_path: str
-    file_size: int | None = None
-    platform_code: str
-    platform_name: str
-    processing_status: ProcessingStatus
-    records_processed: int
-    records_failed: int
-    records_skipped: int
-    quality_score: float | None = None
-    error_message: str | None = None
-    started_at: datetime
-    completed_at: datetime | None = None
-    processing_duration_ms: int | None = None
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class HealthResponse(BaseModel):
-    """Health check response"""
-    status: str
-    timestamp: datetime
-    database_status: str
-    platforms_configured: int
-    api_version: str
-    uptime_seconds: float | None = None
-
-
-class MetricsResponse(BaseModel):
-    """Time-series metrics response"""
-    platform: str
-    metric_type: MetricType
-    time_range: dict[str, date]
-    data_points: list[dict[str, Any]]
-    total_records: int
-    aggregation_method: str
-
-
-class PaginationResponse(BaseModel):
-    """Pagination metadata"""
-    page: int
-    page_size: int
-    total_items: int
-    total_pages: int
-    has_next: bool
-    has_previous: bool
-
-
-class PaginatedResponse(BaseModel):
-    """Generic paginated response wrapper"""
-    data: list[Any]
-    pagination: PaginationResponse
-
-
-# Error Models
-class APIError(BaseModel):
-    """API error response"""
-    error: str
-    status_code: int
-    path: str | None = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    details: str | None = None
-
-
-class ValidationError(BaseModel):
-    """Validation error details"""
-    field: str
-    message: str
-    value: Any | None = None
-
-
-class ValidationErrorResponse(APIError):
-    """Validation error response with field details"""
-    validation_errors: list[ValidationError]
-
-
-# Request Models
-class StreamingRecordFilter(BaseModel):
-    """Filters for streaming records query"""
-    platform: str | None = None
-    artist_name: str | None = None
-    track_title: str | None = None
-    date_from: date | None = None
-    date_to: date | None = None
-    geography: str | None = None
-    metric_type: MetricType | None = None
-    device_type: DeviceType | None = None
-    subscription_type: SubscriptionType | None = None
-    min_quality_score: float | None = Field(None, ge=0, le=100)
-    
-    model_config = ConfigDict(
-        json_json_json_schema_extra ={
-            "example": {
-                "platform": "spo-spotify",
-                "artist_name": "Taylor Swift",
-                "date_from": "2024-01-01",
-                "date_to": "2024-12-31",
-                "min_quality_score": 80
-            }
-        }
-    )
-
-
-class TimeSeriesRequest(BaseModel):
-    """Time-series analytics request"""
-    platforms: list[str] | None = None
-    metric_types: list[MetricType] | None = None
-    date_from: date
-    date_to: date
-    aggregation: str = Field("daily", pattern=r"^(daily|weekly|monthly)$")
-    geography: str | None = None
-    
-    model_config = ConfigDict(
-        json_json_json_schema_extra ={
-            "example": {
-                "platforms": ["spo-spotify", "apl-apple"],
-                "metric_types": ["streams", "plays"],
-                "date_from": "2024-01-01",
-                "date_to": "2024-12-31",
-                "aggregation": "monthly"
-            }
-        }
-    )
 
 # SQLite-compatible UUID type
 class GUID(TypeDecorator):
@@ -330,7 +56,6 @@ class GUID(TypeDecorator):
             return value
 
 # Cross-database JSON type
-
 class JSONType(TypeDecorator):
     """Cross-database JSON type that handles serialization"""
     impl = Text
@@ -433,6 +158,11 @@ class StreamingRecord(Base):
     platform_id = Column(Integer, ForeignKey('platforms.id'), nullable=False)
     track_id = Column(Integer, ForeignKey('tracks.id'), nullable=True)
     
+    # Store denormalized data for performance
+    artist_name = Column(String(500))  # Denormalized for performance
+    track_title = Column(String(1000))  # Denormalized for performance
+    album_name = Column(String(1000))
+    
     # Core metrics
     metric_type = Column(String(50), nullable=False)
     metric_value = Column(Numeric(15, 2), nullable=False)
@@ -467,6 +197,8 @@ class StreamingRecord(Base):
         Index('ix_streaming_records_geography_date', 'geography', 'date'),
         Index('ix_streaming_records_file_hash', 'file_hash'),
         Index('ix_streaming_records_metric_type_date', 'metric_type', 'date'),
+        Index('ix_streaming_records_artist_name', 'artist_name'),
+        Index('ix_streaming_records_track_title', 'track_title'),
     )
 
 class DataProcessingLog(Base):
@@ -725,5 +457,3 @@ if __name__ == "__main__":
         print(f"Database initialization failed: {e}")
         import traceback
         traceback.print_exc()
-
-
