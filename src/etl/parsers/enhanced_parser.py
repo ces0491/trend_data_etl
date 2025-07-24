@@ -1,5 +1,7 @@
 # src/etl/parsers/enhanced_parser.py
 """
+from __future__ import annotations
+
 Enhanced ETL Parser System for Streaming Analytics Platform
 
 Handles real-world data format inconsistencies identified from sample data analysis:
@@ -15,7 +17,6 @@ import re
 import chardet
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple, Any, Union
 from pathlib import Path
 from dataclasses import dataclass
 from enum import Enum
@@ -45,13 +46,13 @@ class PlatformCode(Enum):
 class ParseResult:
     """Result from parsing operation"""
     success: bool
-    data: Optional[pd.DataFrame] = None
-    error_message: Optional[str] = None
+    data: pd.DataFrame | None = None
+    error_message: str | None = None
     quality_score: float = 0.0
     records_parsed: int = 0
     records_failed: int = 0
-    encoding_detected: Optional[str] = None
-    format_detected: Optional[str] = None
+    encoding_detected: str | None = None
+    format_detected: str | None = None
 
 
 class EnhancedETLParser:
@@ -72,7 +73,7 @@ class EnhancedETLParser:
         
         self.platform_configs = self._load_platform_configs()
     
-    def _load_platform_configs(self) -> Dict[str, Dict]:
+    def _load_platform_configs(self) -> dict[str, dict]:
         """Load platform-specific parsing configurations"""
         return {
             PlatformCode.APPLE.value: {
@@ -144,7 +145,7 @@ class EnhancedETLParser:
             }
         }
     
-    def detect_encoding(self, file_path: Union[str, Path]) -> str:
+    def detect_encoding(self, file_path: str | Path) -> str:
         """Detect file encoding with fallback strategy"""
         file_path = Path(file_path)
         
@@ -152,12 +153,12 @@ class EnhancedETLParser:
             with open(file_path, 'rb') as f:
                 raw_data = f.read(10000)  # Read first 10KB for detection
                 result = chardet.detect(raw_data)
-                encoding = result['encoding']
-                confidence = result['confidence']
+                encoding = result.get('encoding') if result else None
+                confidence = result.get('confidence', 0.0) if result else 0.0
                 
                 logger.info(f"Detected encoding: {encoding} (confidence: {confidence:.2f})")
                 
-                if confidence > 0.7:
+                if encoding and confidence > 0.7:
                     return encoding
                 else:
                     logger.warning(f"Low confidence in encoding detection, using utf-8")
@@ -167,7 +168,7 @@ class EnhancedETLParser:
             logger.error(f"Encoding detection failed: {e}")
             return 'utf-8'
     
-    def detect_platform(self, file_path: Union[str, Path]) -> Optional[str]:
+    def detect_platform(self, file_path: str | Path) -> str | None:
         """Detect platform from file path and name"""
         file_path = Path(file_path)
         path_str = str(file_path).lower()
@@ -280,8 +281,11 @@ class EnhancedETLParser:
                 error_message=f"Standard format parsing failed: {str(e)}"
             )
     
-    def _standardize_dates(self, df: pd.DataFrame, platform: str) -> pd.DataFrame:
+    def _standardize_dates(self, df: pd.DataFrame | None, platform: str) -> pd.DataFrame | None:
         """Standardize date formats based on platform-specific patterns"""
+        if df is None:
+            return None
+            
         config = self.platform_configs.get(platform, {})
         date_columns = config.get('date_columns', [])
         
@@ -333,9 +337,9 @@ class EnhancedETLParser:
         
         return pd.Series(parsed_dates)
     
-    def _calculate_quality_score(self, df: pd.DataFrame, platform: str) -> float:
+    def _calculate_quality_score(self, df: pd.DataFrame | None, platform: str) -> float:
         """Calculate data quality score (0-100)"""
-        if df.empty:
+        if df is None or df.empty:
             return 0.0
         
         config = self.platform_configs.get(platform, {})
@@ -370,7 +374,7 @@ class EnhancedETLParser:
         
         return sum(scores)
     
-    def parse_file(self, file_path: Union[str, Path]) -> ParseResult:
+    def parse_file(self, file_path: str | Path) -> ParseResult:
         """Main parsing method that handles all platform formats"""
         file_path = Path(file_path)
         
@@ -432,7 +436,8 @@ if __name__ == "__main__":
             print(f"Quality Score: {result.quality_score:.1f}")
             print(f"Format: {result.format_detected}")
             print(f"Encoding: {result.encoding_detected}")
-            print("\nSample data:")
-            print(result.data.head())
+            if result.data is not None:
+                print("\nSample data:")
+                print(result.data.head())
         else:
             print(f"Parsing failed: {result.error_message}")

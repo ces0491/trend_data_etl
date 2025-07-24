@@ -1,5 +1,7 @@
 # src/etl/data_processor.py
 """
+from __future__ import annotations
+
 Complete Data Processing Pipeline for Streaming Analytics Platform
 Integrates parsing, validation, standardization, and database storage
 """
@@ -9,16 +11,15 @@ import hashlib
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 
 import pandas as pd
 from sqlalchemy.exc import IntegrityError
 
 # Import our custom modules (these would be in separate files)
-from src.etl.parsers.enhanced_parser import EnhancedETLParser, ParseResult
-from src.etl.validators.data_validator import StreamingDataValidator, ValidationResult
-from src.database.models import (
+from .parsers.enhanced_parser import EnhancedETLParser, ParseResult
+from .validators.data_validator import StreamingDataValidator, ValidationResult
+from ..database.models import (
     DatabaseManager, StreamingRecord, Artist, Track, Platform,
     DataProcessingLog, QualityScore
 )
@@ -41,8 +42,8 @@ class ProcessingResult:
     records_failed: int = 0
     quality_score: float = 0.0
     processing_time: float = 0.0
-    error_message: Optional[str] = None
-    validation_result: Optional[ValidationResult] = None
+    error_message: str | None = None
+    validation_result: ValidationResult | None = None
 
 
 class StreamingDataProcessor:
@@ -98,6 +99,11 @@ class StreamingDataProcessor:
             logger.info(f"Parsed {parse_result.records_parsed} records from {platform}")
             
             # Step 2: Validate the data
+            if parse_result.data is None:
+                return self._create_failed_result(
+                    file_path, platform, "Parsing returned no data"
+                )
+            
             validation_result = self.validator.validate_dataset(
                 parse_result.data, platform, str(file_path)
             )
@@ -111,6 +117,11 @@ class StreamingDataProcessor:
                 # Continue processing but log the issue
             
             # Step 4: Standardize the data
+            if parse_result.data is None:
+                return self._create_failed_result(
+                    file_path, platform, "No data available for standardization"
+                )
+            
             standardized_data = self.standardizer.standardize_dataset(
                 parse_result.data, platform
             )
@@ -144,7 +155,7 @@ class StreamingDataProcessor:
             logger.error(f"Processing failed for {file_path}: {str(e)}")
             return self._create_failed_result(file_path, platform or "unknown", str(e))
     
-    def process_directory(self, directory_path: Path, file_pattern: str = "*") -> List[ProcessingResult]:
+    def process_directory(self, directory_path: Path, file_pattern: str = "*") -> list[ProcessingResult]:
         """Process all files in a directory matching the pattern"""
         directory_path = Path(directory_path)
         results = []
@@ -203,7 +214,7 @@ class StreamingDataProcessor:
             ).first()
             return existing is not None
     
-    def _store_data(self, data: List[Dict], platform: str, file_hash: str, file_path: str) -> Tuple[int, int]:
+    def _store_data(self, data: list[dict], platform: str, file_hash: str, file_path: str) -> tuple[int, int]:
         """Store standardized data in database"""
         records_stored = 0
         records_failed = 0
@@ -217,13 +228,29 @@ class StreamingDataProcessor:
             for record_data in data:
                 try:
                     # Create or get artist
-                    artist = self._get_or_create_artist(session, record_data.get('artist_name'))
+                    artist_name = record_data.get('artist_name')
+                    artist = None
+                    if artist_name and isinstance(artist_name, str):
+                        artist = self._get_or_create_artist(session, artist_name)
                     
                     # Create or get track
-                    track = self._get_or_create_track(
-                        session, record_data.get('track_title'), 
-                        record_data.get('isrc'), artist.id if artist else None
-                    )
+                    track_title = record_data.get('track_title')
+                    isrc = record_data.get('isrc')
+                    track = None
+                    if track_title and isinstance(track_title, str):
+                        # Ensure isrc is a string or None
+                        isrc_str = None
+                        if isrc and isinstance(isrc, str):
+                            isrc_str = isrc
+                        
+                        # Ensure artist_id is an int or None
+                        artist_id = None
+                        if artist and hasattr(artist, 'id') and isinstance(artist.id, int):
+                            artist_id = artist.id
+                        
+                        track = self._get_or_create_track(
+                            session, track_title, isrc_str, artist_id
+                        )
                     
                     # Create streaming record
                     streaming_record = StreamingRecord(
@@ -255,9 +282,9 @@ class StreamingDataProcessor:
         
         return records_stored, records_failed
     
-    def _get_or_create_artist(self, session, artist_name: str) -> Optional[Artist]:
+    def _get_or_create_artist(self, session, artist_name: str | None) -> Artist | None:
         """Get existing artist or create new one"""
-        if not artist_name:
+        if not artist_name or not isinstance(artist_name, str):
             return None
             
         # Normalize name for matching
@@ -281,42 +308,42 @@ class StreamingDataProcessor:
         
         return new_artist
     
-    def _get_or_create_track(self, session, track_title: str, isrc: str, artist_id: int) -> Optional[Track]:
+    def _get_or_create_track(self, session, track_title: str | None, isrc: str | None, artist_id: int | None) -> Track | None:
         """Get existing track or create new one"""
-        if not track_title:
+        if not track_title or not isinstance(track_title, str):
             return None
         
         # Try to find by ISRC first
-        if isrc:
+        if isrc and isinstance(isrc, str):
             existing = session.query(Track).filter(Track.isrc == isrc).first()
             if existing:
                 return existing
         
         # Try to find by title and artist
         normalized_title = self._normalize_string(track_title)
-        existing = session.query(Track).filter(
-            Track.title_normalized == normalized_title,
-            Track.artist_id == artist_id
-        ).first()
+        query = session.query(Track).filter(Track.title_normalized == normalized_title)
         
-        if existing:
-            return existing
+        if artist_id and isinstance(artist_id, int):
+            query = query.filter(Track.artist_id == artist_id)
+            existing = query.first()
+            if existing:
+                return existing
         
         # Create new track
         new_track = Track(
             title=track_title,
             title_normalized=normalized_title,
-            isrc=isrc,
-            artist_id=artist_id
+            isrc=isrc if isrc and isinstance(isrc, str) else None,
+            artist_id=artist_id if artist_id and isinstance(artist_id, int) else None
         )
         session.add(new_track)
         session.flush()  # Get the ID
         
         return new_track
     
-    def _normalize_string(self, text: str) -> str:
+    def _normalize_string(self, text: str | None) -> str:
         """Normalize string for matching (lowercase, no extra spaces)"""
-        if not text:
+        if not text or not isinstance(text, str):
             return ""
         return " ".join(text.lower().split())
     
@@ -402,7 +429,7 @@ class DataStandardizer:
     def __init__(self):
         self.column_mappings = self._load_column_mappings()
     
-    def _load_column_mappings(self) -> Dict[str, Dict[str, str]]:
+    def _load_column_mappings(self) -> dict[str, dict[str, str]]:
         """Load platform-specific column mappings to standardized schema"""
         return {
             "apl-apple": {
@@ -434,7 +461,7 @@ class DataStandardizer:
             # Add more mappings as needed
         }
     
-    def standardize_dataset(self, df: pd.DataFrame, platform: str) -> List[Dict]:
+    def standardize_dataset(self, df: pd.DataFrame, platform: str) -> list[dict]:
         """Transform dataset to standardized format"""
         mappings = self.column_mappings.get(platform, {})
         standardized_records = []
@@ -446,7 +473,7 @@ class DataStandardizer:
         
         return standardized_records
     
-    def _standardize_record(self, row: pd.Series, mappings: Dict[str, str], platform: str) -> Optional[Dict]:
+    def _standardize_record(self, row: pd.Series, mappings: dict[str, str], platform: str) -> dict | None:
         """Transform a single record to standardized format"""
         try:
             standardized = {

@@ -1,17 +1,51 @@
-# scripts/init_render_db.py
+#!/usr/bin/env python3
 """
 Render Database Initialization Script
 Sets up PostgreSQL + TimescaleDB on Render for production deployment
 """
 
+from __future__ import annotations
+
 import os
 import sys
 from pathlib import Path
 
-# Add src to path
-sys.path.append(str(Path(__file__).parent.parent / "src"))
+# Add src to path - absolute path approach
+script_dir = Path(__file__).parent
+project_root = script_dir.parent
+src_dir = project_root / "src"
 
-def verify_render_connection():
+# Ensure src directory exists
+if not src_dir.exists():
+    print(f"❌ Source directory not found: {src_dir}")
+    print("   Please run this script from the project root directory")
+    sys.exit(1)
+
+# Add to path with absolute path
+src_path_str = str(src_dir.absolute())
+if src_path_str not in sys.path:
+    sys.path.insert(0, src_path_str)
+
+# Verify models file exists
+models_file = src_dir / "database" / "models.py"
+if not models_file.exists():
+    print(f"❌ Models file not found: {models_file}")
+    print("   Please ensure the database models file exists")
+    sys.exit(1)
+
+# Now import - if this fails, there's a deeper issue
+try:
+    from database.models import DatabaseManager, initialize_database, Platform
+    from sqlalchemy import text, select, func
+except ImportError as e:
+    print(f"❌ Import failed even with correct path setup: {e}")
+    print(f"   Source path: {src_path_str}")
+    print(f"   Models file exists: {models_file.exists()}")
+    print("   Please check if there are syntax errors in models.py")
+    sys.exit(1)
+
+
+def verify_render_connection() -> bool:
     """Verify connection to Render PostgreSQL database"""
     print("🔄 Verifying Render database connection...")
     
@@ -35,13 +69,16 @@ def verify_render_connection():
             return False
     
     try:
-        from database.models import DatabaseManager
         db_manager = DatabaseManager(db_url)
         
         with db_manager.get_session() as session:
-            result = session.execute("SELECT version();")
-            version = result.fetchone()[0]
-            print(f"✅ Connected to PostgreSQL: {version[:50]}...")
+            result = session.execute(text("SELECT version();"))
+            version = result.fetchone()
+            if version:
+                version_str = version[0]
+                print(f"✅ Connected to PostgreSQL: {version_str[:50]}...")
+            else:
+                print("✅ Connected to PostgreSQL successfully")
             
         return True
         
@@ -50,15 +87,17 @@ def verify_render_connection():
         print("   Please check your DATABASE_URL and ensure the database is accessible")
         return False
 
-def setup_timescaledb_extension():
+
+def setup_timescaledb_extension() -> bool:
     """Enable TimescaleDB extension on Render PostgreSQL"""
     print("🔄 Setting up TimescaleDB extension...")
     
     try:
-        from database.models import DatabaseManager
-        from sqlalchemy import text
-        
         db_url = os.getenv('DATABASE_URL')
+        if not db_url:
+            print("❌ DATABASE_URL not set")
+            return False
+            
         db_manager = DatabaseManager(db_url)
         
         with db_manager.engine.connect() as conn:
@@ -90,23 +129,24 @@ def setup_timescaledb_extension():
         print("   The system will work with regular PostgreSQL tables")
         return False
 
-def initialize_database_schema():
+
+def initialize_database_schema() -> bool:
     """Initialize database tables and reference data"""
     print("🔄 Initializing database schema...")
     
     try:
-        from database.models import initialize_database
-        
         db_url = os.getenv('DATABASE_URL')
+        if not db_url:
+            print("❌ DATABASE_URL not set")
+            return False
+            
         db_manager = initialize_database(db_url)
         
         print("✅ Database schema initialized successfully")
         
         # Verify tables were created
         with db_manager.get_session() as session:
-            from database.models import Platform
-            
-            platforms = session.query(Platform).all()
+            platforms = session.execute(select(Platform)).scalars().all()
             print(f"✅ Found {len(platforms)} platforms configured:")
             
             for platform in platforms:
@@ -120,15 +160,17 @@ def initialize_database_schema():
         traceback.print_exc()
         return False
 
-def setup_production_optimizations():
+
+def setup_production_optimizations() -> bool:
     """Apply production-specific database optimizations"""
     print("🔄 Applying production optimizations...")
     
     try:
-        from database.models import DatabaseManager
-        from sqlalchemy import text
-        
         db_url = os.getenv('DATABASE_URL')
+        if not db_url:
+            print("❌ DATABASE_URL not set")
+            return False
+            
         db_manager = DatabaseManager(db_url)
         
         with db_manager.engine.connect() as conn:
@@ -138,9 +180,10 @@ def setup_production_optimizations():
                     SELECT 1 FROM pg_extension WHERE extname = 'timescaledb'
                 );
             """))
-            timescale_available = result.fetchone()[0]
+            timescale_available = result.fetchone()
+            timescale_enabled = timescale_available[0] if timescale_available else False
             
-            if timescale_available:
+            if timescale_enabled:
                 print("✅ TimescaleDB detected - applying time-series optimizations...")
                 
                 # Create hypertable for streaming_records
@@ -186,7 +229,7 @@ def setup_production_optimizations():
                 # Apply standard PostgreSQL optimizations
                 optimizations = [
                     "SET shared_preload_libraries = 'pg_stat_statements';",
-                    "SET log_statement = 'mod';",
+                    "SET log_statement = 'mod';", 
                     "SET log_min_duration_statement = 1000;",  # Log slow queries > 1s
                 ]
                 
@@ -205,23 +248,25 @@ def setup_production_optimizations():
         print(f"⚠️  Production optimizations failed: {e}")
         return False
 
-def verify_production_readiness():
+
+def verify_production_readiness() -> bool:
     """Verify the database is ready for production use"""
     print("🔄 Verifying production readiness...")
     
     try:
-        from database.models import DatabaseManager
-        
         db_url = os.getenv('DATABASE_URL')
+        if not db_url:
+            print("❌ DATABASE_URL not set")
+            return False
+            
         db_manager = DatabaseManager(db_url)
         
         checks = []
         
         with db_manager.get_session() as session:
-            from database.models import Platform, Artist, Track, StreamingRecord
-            
-            # Check 1: Platform data
-            platform_count = session.query(Platform).count()
+            # Check 1: Platform data - use count query properly
+            platform_count_result = session.execute(select(func.count(Platform.id))).scalar()
+            platform_count = platform_count_result if platform_count_result is not None else 0
             checks.append(("Platform data", platform_count >= 9, f"{platform_count} platforms"))
             
             # Check 2: Database connectivity
@@ -229,9 +274,19 @@ def verify_production_readiness():
             
             # Check 3: Table structure
             try:
-                # Test table structure by attempting basic operations
-                session.query(StreamingRecord).limit(1).all()
-                checks.append(("Table structure", True, "All tables accessible"))
+                # Import StreamingRecord with same pattern
+                try:
+                    from database.models import StreamingRecord
+                except ImportError:
+                    # If import fails, skip this check
+                    checks.append(("Table structure", False, "Could not import StreamingRecord"))
+                    StreamingRecord = None
+                
+                if StreamingRecord is not None:
+                    # Test table structure by attempting basic operations
+                    test_query = session.execute(select(StreamingRecord).limit(1))
+                    test_query.scalars().all()  # This will work even if no records exist
+                    checks.append(("Table structure", True, "All tables accessible"))
             except Exception as e:
                 checks.append(("Table structure", False, f"Error: {e}"))
         
@@ -275,7 +330,8 @@ def verify_production_readiness():
         print(f"❌ Production readiness check failed: {e}")
         return False
 
-def main():
+
+def main() -> None:
     """Main initialization function"""
     print("STREAMING ANALYTICS PLATFORM - RENDER DATABASE INITIALIZATION")
     print("=" * 70)
@@ -317,6 +373,7 @@ def main():
     else:
         print("❌ INITIALIZATION INCOMPLETE")
         print("Please resolve the issues above and run again")
+
 
 if __name__ == "__main__":
     main()

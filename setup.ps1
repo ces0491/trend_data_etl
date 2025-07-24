@@ -13,10 +13,10 @@ function Show-Help {
     Write-Host ""
     Write-Host "Development Commands:" -ForegroundColor Cyan
     Write-Host "  init           - Install dependencies and setup local environment"
+    Write-Host "  validate       - Validate setup and configuration" 
     Write-Host "  db-sqlite      - Setup SQLite database for testing"
     Write-Host "  db-postgres    - Setup connection to Render PostgreSQL"
     Write-Host "  test-samples   - Test with sample data files"
-    Write-Host "  validate       - Run comprehensive data validation"
     Write-Host "  serve          - Start API server locally"
     Write-Host "  demo           - Run quick start demo"
     Write-Host ""
@@ -103,7 +103,7 @@ API_PORT=8000
     Write-Host "  3. .\setup.ps1 test-samples  # Test with your sample data"
 }
 
-function Setup-SQLiteDatabase {
+function Initialize-SQLiteDatabase {
     Write-Host "Setting up SQLite database for testing..." -ForegroundColor Yellow
     
     # Create temp directory
@@ -124,7 +124,7 @@ function Setup-SQLiteDatabase {
     }
 }
 
-function Setup-PostgreSQLConnection {
+function Initialize-PostgreSQLConnection {
     Write-Host "Setting up PostgreSQL connection..." -ForegroundColor Yellow
     Write-Host ""
     Write-Host "To connect to Render PostgreSQL:" -ForegroundColor Cyan
@@ -135,6 +135,11 @@ function Setup-PostgreSQLConnection {
     Write-Host ""
     Write-Host "Example DATABASE_URL format:" -ForegroundColor Yellow
     Write-Host "postgresql://username:password@dpg-xxxxx-a.oregon-postgres.render.com/database_name" -ForegroundColor Gray
+}
+
+function Test-SetupValidation {
+    Write-Host "Running setup validation..." -ForegroundColor Yellow
+    python scripts/validate_setup.py
 }
 
 function Test-SampleData {
@@ -150,11 +155,6 @@ function Test-SampleData {
     python scripts/validate_real_samples.py
 }
 
-function Run-Validation {
-    Write-Host "Running comprehensive data validation..." -ForegroundColor Yellow
-    python scripts/comprehensive_validation.py
-}
-
 function Start-APIServer {
     Write-Host "Starting API server..." -ForegroundColor Yellow
     Write-Host "API will be available at: http://localhost:8000" -ForegroundColor Green
@@ -166,12 +166,12 @@ function Start-APIServer {
     uvicorn scripts.quick_start_demo:app --reload --host 0.0.0.0 --port 8000
 }
 
-function Run-Demo {
+function Start-Demo {
     Write-Host "Running quick start demo..." -ForegroundColor Yellow
     python scripts/quick_start_demo.py
 }
 
-function Run-Tests {
+function Invoke-Tests {
     Write-Host "Running tests..." -ForegroundColor Yellow
     if (Test-Path "tests") {
         pytest tests/ -v --cov=src --cov-report=html
@@ -219,7 +219,7 @@ def test_sqlite_connection():
     }
 }
 
-function Run-Linting {
+function Invoke-Linting {
     Write-Host "Running code linting..." -ForegroundColor Yellow
     
     # Check if flake8 is installed
@@ -255,7 +255,7 @@ function Format-Code {
     Write-Host "✅ Code formatted" -ForegroundColor Green
 }
 
-function Prepare-RenderDeployment {
+function Initialize-RenderDeployment {
     Write-Host "Preparing for Render deployment..." -ForegroundColor Yellow
     
     # Create render.yaml if it doesn't exist
@@ -266,7 +266,7 @@ function Prepare-RenderDeployment {
 services:
   - type: web
     name: trend-data-etl-api
-    env: python
+    runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn scripts.quick_start_demo:app --host 0.0.0.0 --port `$PORT
@@ -276,9 +276,9 @@ services:
           name: trend-data-etl-db
           property: connectionString
       - key: QUALITY_THRESHOLD
-        value: 90
+        value: "90"
       - key: DATABASE_DEBUG
-        value: false
+        value: "false"
 
 databases:
   - name: trend-data-etl-db
@@ -348,7 +348,7 @@ function Test-RenderDeployment {
         Write-Host "Testing endpoints..." -ForegroundColor Yellow
         
         try {
-            $healthResponse = Invoke-RestMethod -Uri "$renderUrl/health" -Method Get
+            Invoke-RestMethod -Uri "$renderUrl/health" -Method Get | Out-Null
             Write-Host "✅ Health check passed" -ForegroundColor Green
             
             $platformsResponse = Invoke-RestMethod -Uri "$renderUrl/platforms" -Method Get
@@ -365,7 +365,7 @@ function Test-RenderDeployment {
     }
 }
 
-function Clean-Environment {
+function Clear-Environment {
     Write-Host "Cleaning temporary files and databases..." -ForegroundColor Yellow
     
     # Remove temporary database
@@ -392,7 +392,7 @@ function Clean-Environment {
 function Reset-Environment {
     Write-Host "Resetting local environment..." -ForegroundColor Yellow
     
-    Clean-Environment
+    Clear-Environment
     
     # Remove virtual environment
     if (Test-Path "venv") {
@@ -407,19 +407,19 @@ function Reset-Environment {
 switch ($Command.ToLower()) {
     "help"           { Show-Help }
     "init"           { Initialize-Environment }
-    "db-sqlite"      { Setup-SQLiteDatabase }
-    "db-postgres"    { Setup-PostgreSQLConnection }
+    "validate"       { Test-SetupValidation }
+    "db-sqlite"      { Initialize-SQLiteDatabase }
+    "db-postgres"    { Initialize-PostgreSQLConnection }
     "test-samples"   { Test-SampleData }
-    "validate"       { Run-Validation }
     "serve"          { Start-APIServer }
-    "demo"           { Run-Demo }
-    "test"           { Run-Tests }
-    "lint"           { Run-Linting }
+    "demo"           { Start-Demo }
+    "test"           { Invoke-Tests }
+    "lint"           { Invoke-Linting }
     "format"         { Format-Code }
-    "render-prep"    { Prepare-RenderDeployment }
+    "render-prep"    { Initialize-RenderDeployment }
     "render-init"    { Initialize-RenderDatabase }
     "render-test"    { Test-RenderDeployment }
-    "clean"          { Clean-Environment }
+    "clean"          { Clear-Environment }
     "reset"          { Reset-Environment }
     default {
         Write-Host "Unknown command: $Command" -ForegroundColor Red

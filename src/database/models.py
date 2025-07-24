@@ -1,11 +1,12 @@
 # src/database/models.py
 """
+from __future__ import annotations
+
 Database models and schema for Streaming Analytics Platform
 Using SQLAlchemy with TimescaleDB hypertables for time-series optimization
 """
 
 from datetime import datetime
-from typing import Optional
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -203,11 +204,12 @@ logger = logging.getLogger(__name__)
 class DatabaseManager:
     """Manages database connections and TimescaleDB setup"""
     
-    def __init__(self, database_url: Optional[str] = None):
-        self.database_url = database_url or os.getenv('DATABASE_URL')
-        if not self.database_url:
+    def __init__(self, database_url: str | None = None):
+        provided_url = database_url or os.getenv('DATABASE_URL')
+        if not provided_url:
             raise ValueError("DATABASE_URL not provided")
-            
+        
+        self.database_url: str = provided_url  # Now guaranteed to be non-None
         self.engine = create_engine(
             self.database_url,
             pool_size=10,
@@ -217,35 +219,43 @@ class DatabaseManager:
         )
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
     
-    def create_tables(self):
+    def create_all_tables(self):
         """Create all tables"""
         Base.metadata.create_all(bind=self.engine)
-                    logger.info("Database tables created")
+        logger.info("Database tables created")
     
     def setup_timescaledb(self):
         """Setup TimescaleDB hypertable and optimizations"""
-        with self.engine.connect() as conn:
-            # Enable TimescaleDB extension
-            conn.execute(text("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;"))
-            conn.commit()
+        if 'sqlite' in self.database_url.lower():
+            logger.info("SQLite detected - skipping TimescaleDB setup")
+            return
             
-            # Create hypertable for streaming_records
-            try:
-                conn.execute(text("""
-                    SELECT create_hypertable('streaming_records', 'date', 
-                                            chunk_time_interval => INTERVAL '1 month');
-                """))
-                logger.info("TimescaleDB hypertable created for streaming_records")
-            except Exception as e:
-                if "already a hypertable" in str(e):
-                    logger.info("TimescaleDB hypertable already exists")
-                else:
-                    logger.error(f"Failed to create hypertable: {e}")
-                    raise
-            
-            # Create continuous aggregates for common queries
-            self._create_continuous_aggregates(conn)
-            conn.commit()
+        try:
+            with self.engine.connect() as conn:
+                # Enable TimescaleDB extension
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;"))
+                conn.commit()
+                
+                # Create hypertable for streaming_records
+                try:
+                    conn.execute(text("""
+                        SELECT create_hypertable('streaming_records', 'date', 
+                                                chunk_time_interval => INTERVAL '1 month',
+                                                if_not_exists => TRUE);
+                    """))
+                    logger.info("TimescaleDB hypertable created for streaming_records")
+                except Exception as e:
+                    if "already a hypertable" in str(e):
+                        logger.info("TimescaleDB hypertable already exists")
+                    else:
+                        logger.error(f"Failed to create hypertable: {e}")
+                        raise
+                
+                # Create continuous aggregates for common queries
+                self._create_continuous_aggregates(conn)
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"TimescaleDB setup failed (continuing with regular PostgreSQL): {e}")
     
     def _create_continuous_aggregates(self, conn):
         """Create continuous aggregates for performance"""
@@ -299,7 +309,7 @@ class DatabaseManager:
                 Platform(code="dzr-deezer", name="Deezer"),
                 Platform(code="fbk-facebook", name="Facebook/Meta"),
                 Platform(code="plt-peloton", name="Peloton"),
-                Platform(code="scu-soundcloud", name="SoundCloud"),
+                Platform(code="scu-soundcloud", name="SoundCloud"),  
                 Platform(code="spo-spotify", name="Spotify"),
                 Platform(code="vvo-vevo", name="Vevo"),
             ]
@@ -320,29 +330,41 @@ class DatabaseManager:
         finally:
             session.close()
     
-    def get_platform_by_code(self, code: str) -> Optional[Platform]:
+    def get_platform_by_code(self, code: str) -> Platform | None:
         """Get platform by code"""
+        if not code:
+            return None
+            
         with self.get_session() as session:
             return session.query(Platform).filter(Platform.code == code).first()
 
 
 # Database initialization script
-def initialize_database(database_url: str = None):
+def initialize_database(database_url: str | None = None) -> DatabaseManager:
     """Initialize database with all required setup"""
+    if not database_url:
+        database_url = os.getenv('DATABASE_URL')
+        
+    if not database_url:
+        raise ValueError("DATABASE_URL not provided and not found in environment")
+    
     db = DatabaseManager(database_url)
     
     logger.info("🔄 Initializing database...")
     
     # Create tables
-    db.create_tables()
+    db.create_all_tables()
     
-    # Setup TimescaleDB
-    db.setup_timescaledb()
+    # Setup TimescaleDB (only for PostgreSQL)
+    if 'postgresql' in database_url.lower():
+        db.setup_timescaledb()
+    else:
+        logger.info("Non-PostgreSQL database - skipping TimescaleDB setup")
     
     # Initialize reference data
     db.initialize_reference_data()
     
-    logger.info("Database initialization complete")
+    logger.info("✅ Database initialization complete")
     
     return db
 
@@ -355,7 +377,10 @@ if __name__ == "__main__":
     
     load_dotenv()
     
-    db_url = os.getenv('DATABASE_URL', 'postgresql://analytics_user:analytics_password@localhost:5432/streaming_analytics')
+    db_url = os.getenv('DATABASE_URL')
+    if not db_url:
+        print("❌ DATABASE_URL not found in environment")
+        exit(1)
     
     try:
         db = initialize_database(db_url)
@@ -369,3 +394,5 @@ if __name__ == "__main__":
                 
     except Exception as e:
         print(f"Database initialization failed: {e}")
+        import traceback
+        traceback.print_exc()

@@ -1,5 +1,7 @@
 # src/etl/validators/data_validator.py
 """
+from __future__ import annotations
+
 Comprehensive Data Validation & Quality Framework
 Based on real-world data analysis findings from 19 sample files
 """
@@ -7,10 +9,9 @@ Based on real-world data analysis findings from 19 sample files
 import re
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional, Set, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
-
+from typing import Any
 import pandas as pd
 import numpy as np
 
@@ -31,9 +32,9 @@ class ValidationIssue:
     rule_name: str
     severity: ValidationSeverity
     message: str
-    column: Optional[str] = None
+    column: str | None = None
     row_count: int = 0
-    sample_values: List[Any] = field(default_factory=list)
+    sample_values: list[Any] = field(default_factory=list)
     percentage: float = 0.0
 
 
@@ -44,8 +45,8 @@ class ValidationResult:
     completeness_score: float
     consistency_score: float
     validity_score: float
-    issues: List[ValidationIssue] = field(default_factory=list)
-    metrics: Dict[str, Any] = field(default_factory=dict)
+    issues: list[ValidationIssue] = field(default_factory=list)
+    metrics: dict[str, Any] = field(default_factory=dict)
     passed_rules: int = 0
     total_rules: int = 0
 
@@ -60,7 +61,7 @@ class StreamingDataValidator:
         self.validation_rules = self._load_validation_rules()
         self.platform_specific_rules = self._load_platform_specific_rules()
     
-    def _load_validation_rules(self) -> Dict[str, Dict]:
+    def _load_validation_rules(self) -> dict[str, dict]:
         """Load general validation rules applicable to all platforms"""
         return {
             "isrc_format": {
@@ -92,7 +93,7 @@ class StreamingDataValidator:
             }
         }
     
-    def _load_platform_specific_rules(self) -> Dict[str, Dict]:
+    def _load_platform_specific_rules(self) -> dict[str, dict]:
         """Load platform-specific validation rules based on real data analysis"""
         return {
             "apl-apple": {
@@ -206,7 +207,7 @@ class StreamingDataValidator:
             total_rules=total_rules
         )
     
-    def _validate_required_columns(self, df: pd.DataFrame, platform: str) -> List[ValidationIssue]:
+    def _validate_required_columns(self, df: pd.DataFrame, platform: str) -> list[ValidationIssue]:
         """Validate that required columns are present"""
         issues = []
         platform_config = self.platform_specific_rules.get(platform, {})
@@ -225,7 +226,7 @@ class StreamingDataValidator:
         
         return issues
     
-    def _validate_data_completeness(self, df: pd.DataFrame) -> List[ValidationIssue]:
+    def _validate_data_completeness(self, df: pd.DataFrame) -> list[ValidationIssue]:
         """Validate data completeness (non-null values)"""
         issues = []
         
@@ -254,7 +255,7 @@ class StreamingDataValidator:
         
         return issues
     
-    def _validate_data_types(self, df: pd.DataFrame, platform: str) -> List[ValidationIssue]:
+    def _validate_data_types(self, df: pd.DataFrame, platform: str) -> list[ValidationIssue]:
         """Validate data types and detect inconsistencies"""
         issues = []
         
@@ -280,7 +281,7 @@ class StreamingDataValidator:
         
         return issues
     
-    def _validate_date_formats(self, df: pd.DataFrame, platform: str) -> List[ValidationIssue]:
+    def _validate_date_formats(self, df: pd.DataFrame, platform: str) -> list[ValidationIssue]:
         """Validate date formats based on platform-specific patterns"""
         issues = []
         date_columns = self._identify_date_columns(df)
@@ -310,7 +311,7 @@ class StreamingDataValidator:
         
         return issues
     
-    def _validate_numeric_ranges(self, df: pd.DataFrame) -> List[ValidationIssue]:
+    def _validate_numeric_ranges(self, df: pd.DataFrame) -> list[ValidationIssue]:
         """Validate numeric values are within expected ranges"""
         issues = []
         numeric_rules = self.validation_rules["numeric_ranges"]
@@ -355,7 +356,7 @@ class StreamingDataValidator:
         
         return issues
     
-    def _validate_text_fields(self, df: pd.DataFrame) -> List[ValidationIssue]:
+    def _validate_text_fields(self, df: pd.DataFrame) -> list[ValidationIssue]:
         """Validate text field lengths and content"""
         issues = []
         text_rules = self.validation_rules["text_length"]
@@ -401,7 +402,7 @@ class StreamingDataValidator:
         
         return issues
     
-    def _validate_isrc_codes(self, df: pd.DataFrame) -> List[ValidationIssue]:
+    def _validate_isrc_codes(self, df: pd.DataFrame) -> list[ValidationIssue]:
         """Validate ISRC codes format"""
         issues = []
         isrc_columns = [col for col in df.columns if 'isrc' in col.lower()]
@@ -433,7 +434,7 @@ class StreamingDataValidator:
         
         return issues
     
-    def _validate_platform_specific(self, df: pd.DataFrame, platform: str) -> List[ValidationIssue]:
+    def _validate_platform_specific(self, df: pd.DataFrame, platform: str) -> list[ValidationIssue]:
         """Apply platform-specific validation rules"""
         issues = []
         platform_rules = self.platform_specific_rules.get(platform, {})
@@ -488,7 +489,7 @@ class StreamingDataValidator:
         
         return issues
     
-    def _validate_data_consistency(self, df: pd.DataFrame, platform: str) -> List[ValidationIssue]:
+    def _validate_data_consistency(self, df: pd.DataFrame, platform: str) -> list[ValidationIssue]:
         """Validate data consistency within the dataset"""
         issues = []
         
@@ -535,7 +536,7 @@ class StreamingDataValidator:
         
         return issues
     
-    def _identify_date_columns(self, df: pd.DataFrame) -> List[str]:
+    def _identify_date_columns(self, df: pd.DataFrame) -> list[str]:
         """Identify columns that likely contain dates"""
         date_indicators = ['date', 'time', 'timestamp', 'created', 'updated', 'period']
         return [col for col in df.columns if any(indicator in col.lower() for indicator in date_indicators)]
@@ -561,7 +562,7 @@ class StreamingDataValidator:
         except:
             return False
     
-    def _calculate_quality_scores(self, issues: List[ValidationIssue], df: pd.DataFrame) -> Dict[str, float]:
+    def _calculate_quality_scores(self, issues: list[ValidationIssue], df: pd.DataFrame) -> dict[str, float]:
         """Calculate quality scores based on validation issues"""
         # Base scores
         completeness_score = 100.0

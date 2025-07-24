@@ -1,5 +1,7 @@
 # scripts/quick_start_demo.py
 """
+from __future__ import annotations
+
 Quick Start Demo for Streaming Analytics Platform
 Demonstrates end-to-end functionality with sample data
 """
@@ -8,7 +10,6 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import List, Dict, Any
 
 # Add src to path for imports
 sys.path.append(str(Path(__file__).parent.parent / "src"))
@@ -97,14 +98,14 @@ def query_data_demo(db_manager: DatabaseManager):
         from database.models import StreamingRecord, Platform, Artist, Track
         
         # Query total records
-        total_records = session.query(StreamingRecord).count()
+        total_records = session.query(StreamingRecord).scalar()
         print(f"Total streaming records: {total_records:,}")
         
         # Query by platform
         platforms = session.query(Platform).all()
         print(f"\nRecords by platform:")
         for platform in platforms:
-            count = session.query(StreamingRecord).filter_by(platform_id=platform.id).count()
+            count = session.query(StreamingRecord).where(platform_id=platform.id).scalar()
             if count > 0:
                 print(f"  {platform.name}: {count:,} records")
         
@@ -112,9 +113,9 @@ def query_data_demo(db_manager: DatabaseManager):
         print(f"\nTop artists by records:")
         top_artists = session.query(
             Artist.name,
-            session.query(StreamingRecord).join(Track).filter(Track.artist_id == Artist.id).count().label('record_count')
+            session.query(StreamingRecord).join(Track).filter(Track.artist_id == Artist.id).scalar().label('record_count')
         ).join(Track).join(StreamingRecord).group_by(Artist.id, Artist.name).order_by(
-            session.query(StreamingRecord).join(Track).filter(Track.artist_id == Artist.id).count().desc()
+            session.query(StreamingRecord).join(Track).filter(Track.artist_id == Artist.id).scalar().desc()
         ).limit(5).all()
         
         for artist_name, count in top_artists:
@@ -135,7 +136,6 @@ from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from datetime import date
-from typing import Optional
 
 app = FastAPI(
     title="Trend Data ETL Platform - Data Access API",
@@ -165,7 +165,7 @@ class ArtistResponse(BaseModel):
 class TrackResponse(BaseModel):
     id: int
     title: str
-    isrc: Optional[str]
+    isrc: str | None
     artist_name: str
 
 class StreamingRecordResponse(BaseModel):
@@ -176,8 +176,8 @@ class StreamingRecordResponse(BaseModel):
     artist_name: str
     metric_type: str
     metric_value: float
-    geography: Optional[str]
-    quality_score: Optional[float]
+    geography: str | None
+    quality_score: float | None
 
 class QualitySummaryResponse(BaseModel):
     total_files_processed: int
@@ -190,20 +190,20 @@ class QualitySummaryResponse(BaseModel):
 async def root():
     return {"message": "Trend Data ETL Platform - Phase 1 Data Access API", "version": "1.0.0"}
 
-@app.get("/platforms", response_model=List[PlatformResponse])
+@app.get("/platforms", response_model=list[PlatformResponse])
 async def get_platforms(db: DatabaseManager = Depends(get_db)):
     """Get all streaming platforms"""
     with db.get_session() as session:
         from database.models import Platform
-        platforms = session.query(Platform).filter_by(is_active=True).all()
+        platforms = session.query(Platform).where(is_active=True).all()
         return [
             PlatformResponse(id=p.id, code=p.code, name=p.name, is_active=p.is_active)
             for p in platforms
         ]
 
-@app.get("/artists", response_model=List[ArtistResponse])
+@app.get("/artists", response_model=list[ArtistResponse])
 async def get_artists(
-    search: Optional[str] = Query(None, description="Search term for artist names"),
+    search: str | None = Query(None, description="Search term for artist names"),
     limit: int = Query(50, ge=1, le=1000, description="Maximum number of results"),
     db: DatabaseManager = Depends(get_db)
 ):
@@ -218,7 +218,7 @@ async def get_artists(
         artists = query.limit(limit).all()
         return [ArtistResponse(id=a.id, name=a.name) for a in artists]
 
-@app.get("/artists/{artist_id}/tracks", response_model=List[TrackResponse])
+@app.get("/artists/{artist_id}/tracks", response_model=list[TrackResponse])
 async def get_artist_tracks(
     artist_id: int,
     limit: int = Query(100, ge=1, le=1000),
@@ -243,12 +243,12 @@ async def get_artist_tracks(
             ) for t in tracks
         ]
 
-@app.get("/streaming-records", response_model=List[StreamingRecordResponse])
+@app.get("/streaming-records", response_model=list[StreamingRecordResponse])
 async def get_streaming_records(
-    platform: Optional[str] = Query(None, description="Platform code filter"),
-    artist_name: Optional[str] = Query(None, description="Artist name filter"),
-    date_from: Optional[date] = Query(None, description="Start date filter"),
-    date_to: Optional[date] = Query(None, description="End date filter"),
+    platform: str | None = Query(None, description="Platform code filter"),
+    artist_name: str | None = Query(None, description="Artist name filter"),
+    date_from: date | None = Query(None, description="Start date filter"),
+    date_to: date | None = Query(None, description="End date filter"),
     limit: int = Query(100, ge=1, le=10000),
     db: DatabaseManager = Depends(get_db)
 ):
@@ -321,7 +321,7 @@ async def health_check(db: DatabaseManager = Depends(get_db)):
     try:
         with db.get_session() as session:
             from database.models import Platform
-            platform_count = session.query(Platform).count()
+            platform_count = session.query(Platform).scalar()
             return {"status": "healthy", "platforms_configured": platform_count}
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Database error: {str(e)}")
