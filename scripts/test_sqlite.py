@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Quick SQLite Database Test Script
-Tests basic database operations after setup
+Fixed SQLite Database Test Script
+Tests basic database operations with correct schema
 """
 
 import os
@@ -9,12 +9,13 @@ import sys
 import sqlite3
 from pathlib import Path
 from datetime import datetime
+import uuid
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 def test_basic_operations():
-    """Test basic database operations"""
+    """Test basic database operations with correct schema"""
     print("🔍 Testing basic database operations...")
     
     try:
@@ -38,24 +39,52 @@ def test_basic_operations():
     platforms = cursor.fetchall()
     print(f"✅ Found {len(platforms)} platforms")
     
-    # Test 2: Insert test data
-    test_record_id = f"test_{int(datetime.now().timestamp())}"
+    # Test 2: Create test artist and track (following proper schema)
+    test_record_id = str(uuid.uuid4())
+    
+    # Insert test artist
+    cursor.execute("""
+        INSERT INTO artists (name, name_normalized)
+        VALUES (?, ?)
+    """, ("Test Artist", "test artist"))
+    
+    artist_id = cursor.lastrowid
+    print("✅ Test artist created")
+    
+    # Insert test track
+    cursor.execute("""
+        INSERT INTO tracks (title, title_normalized, artist_id)
+        VALUES (?, ?, ?)
+    """, ("Test Song", "test song", artist_id))
+    
+    track_id = cursor.lastrowid
+    print("✅ Test track created")
+    
+    # Insert test streaming record (using correct schema)
     cursor.execute("""
         INSERT INTO streaming_records 
-        (id, date, platform_id, artist_name, track_title, metric_type, metric_value, data_quality_score)
-        VALUES (?, ?, 1, ?, ?, ?, ?, ?)
-    """, (test_record_id, datetime.now(), "Test Artist", "Test Song", "streams", 1000.0, 95.0))
+        (id, date, platform_id, track_id, metric_type, metric_value, data_quality_score)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (test_record_id, datetime.now(), 1, track_id, "streams", 1000.0, 95.0))
     
-    print("✅ Test record inserted successfully")
+    print("✅ Test streaming record inserted successfully")
     
-    # Test 3: Query test data
-    cursor.execute("SELECT COUNT(*) FROM streaming_records WHERE id = ?", (test_record_id,))
-    count = cursor.fetchone()[0]
+    # Test 3: Query test data with joins
+    cursor.execute("""
+        SELECT sr.id, a.name, t.title, sr.metric_value
+        FROM streaming_records sr
+        JOIN tracks t ON sr.track_id = t.id
+        JOIN artists a ON t.artist_id = a.id
+        WHERE sr.id = ?
+    """, (test_record_id,))
     
-    if count == 1:
-        print("✅ Test record query successful")
+    result = cursor.fetchone()
+    
+    if result:
+        record_id, artist_name, track_title, metric_value = result
+        print(f"✅ Test record query successful: {artist_name} - {track_title} ({metric_value} streams)")
     else:
-        print(f"❌ Expected 1 record, found {count}")
+        print("❌ Test record not found")
         return False
     
     # Test 4: Use view
@@ -65,6 +94,8 @@ def test_basic_operations():
     
     # Clean up test data
     cursor.execute("DELETE FROM streaming_records WHERE id = ?", (test_record_id,))
+    cursor.execute("DELETE FROM tracks WHERE id = ?", (track_id,))
+    cursor.execute("DELETE FROM artists WHERE id = ?", (artist_id,))
     conn.commit()
     print("✅ Test data cleaned up")
     
