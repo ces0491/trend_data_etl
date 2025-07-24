@@ -3,11 +3,12 @@
 Enhanced ETL Parser System for Streaming Analytics Platform - FIXED
 
 Key fixes:
-1. Fixed type annotations and None handling
-2. Better delimiter detection
-3. Enhanced CSV format handling
-4. Fixed date parsing logic
-5. Proper error handling for edge cases
+1. Robust encoding detection that prioritizes UTF-8
+2. Error handling for Unicode decode issues
+3. Better delimiter detection
+4. Enhanced CSV format handling
+5. Fixed date parsing logic
+6. Proper error handling for edge cases
 """
 
 import csv
@@ -145,26 +146,116 @@ class EnhancedETLParser:
             }
         }
     
-    def detect_encoding(self, file_path: Path) -> str:
-        """Detect file encoding with fallback strategy"""
+    def detect_encoding(self, file_path: Path, platform: Optional[str] = None) -> str:
+        """
+        FIXED: Robust encoding detection that prioritizes UTF-8 and avoids ASCII traps
+        """
+        # Get platform-specific encoding priority if available
+        if platform:
+            config = self.platform_configs.get(platform, {})
+            priority_encodings = config.get('encoding_priority', ['utf-8'])
+        else:
+            priority_encodings = ['utf-8']
+        
+        # Always prioritize UTF-8 and common encodings over ASCII
+        encodings_to_try = [
+            'utf-8',           # Most common for modern files
+            'utf-8-sig',       # UTF-8 with BOM
+            'cp1252',          # Windows-1252 (very common for CSV exports)
+            'latin1',          # ISO-8859-1 fallback
+        ] + priority_encodings
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        encodings_to_try = [x for x in encodings_to_try if not (x in seen or seen.add(x))]
+        
+        # Try chardet first, but be skeptical of ASCII detection
         try:
             with open(file_path, 'rb') as f:
-                raw_data = f.read(10000)  # Read first 10KB for detection
+                raw_data = f.read(50000)  # Read more data for better detection
                 result = chardet.detect(raw_data)
-                encoding = result.get('encoding') if result else None
-                confidence = result.get('confidence', 0.0) if result else 0.0
                 
-                logger.debug(f"Detected encoding: {encoding} (confidence: {confidence:.2f})")
+            if result and result.get('encoding'):
+                detected_encoding = result['encoding'].lower()
+                confidence = result.get('confidence', 0.0)
                 
-                if encoding and confidence > 0.7:
-                    return encoding
-                else:
-                    logger.debug(f"Low confidence in encoding detection, using utf-8")
-                    return 'utf-8'
+                logger.debug(f"Chardet detected: {detected_encoding} (confidence: {confidence:.2f})")
+                
+                # Be very skeptical of ASCII detection - often wrong for real-world files
+                if detected_encoding == 'ascii':
+                    # Check if there are any high-bit bytes that would break ASCII
+                    if any(b > 127 for b in raw_data):
+                        logger.warning(f"Chardet detected ASCII but file contains non-ASCII bytes, using UTF-8")
+                        return 'utf-8'
+                    else:
+                        # Actually might be ASCII, but still prefer UTF-8 (superset of ASCII)
+                        logger.info(f"File appears to be ASCII, using UTF-8 for safety")
+                        return 'utf-8'
+                
+                # For other encodings, trust chardet if confidence is high
+                if confidence > 0.8:
+                    # Map some chardet names to standard Python names
+                    encoding_map = {
+                        'windows-1252': 'cp1252',
+                        'iso-8859-1': 'latin1',
+                    }
+                    detected_encoding = encoding_map.get(detected_encoding, detected_encoding)
                     
+                    # Validate the detected encoding works
+                    if self._test_encoding(file_path, detected_encoding):
+                        logger.info(f"Using chardet detected encoding: {detected_encoding}")
+                        return detected_encoding
+        
         except Exception as e:
-            logger.error(f"Encoding detection failed: {e}")
-            return 'utf-8'
+            logger.warning(f"Chardet detection failed: {e}")
+        
+        # Manual testing of encodings in priority order
+        for encoding in encodings_to_try:
+            if self._test_encoding(file_path, encoding):
+                logger.info(f"Using manually detected encoding: {encoding}")
+                return encoding
+        
+        # Last resort: UTF-8 with error handling
+        logger.warning(f"Could not reliably detect encoding for {file_path}, using UTF-8 with error handling")
+        return 'utf-8'
+    
+    def _test_encoding(self, file_path: Path, encoding: str) -> bool:
+        """Test if an encoding can successfully decode the file"""
+        try:
+            with open(file_path, 'r', encoding=encoding) as f:
+                # Try to read a substantial portion of the file
+                sample = f.read(100000)  # Read 100KB
+                # If we get here without exception, encoding works
+                return True
+        except (UnicodeDecodeError, UnicodeError):
+            return False
+        except Exception:
+            return False
+    
+    def _read_file_safely(self, file_path: Path, encoding: str) -> str:
+        """
+        FIXED: Read file with encoding and graceful error handling
+        """
+        try:
+            with open(file_path, 'r', encoding=encoding) as f:
+                return f.read()
+        except UnicodeDecodeError as e:
+            logger.warning(f"Unicode decode error with {encoding}: {e}")
+            logger.info(f"Attempting to read with error replacement...")
+            
+            try:
+                with open(file_path, 'r', encoding=encoding, errors='replace') as f:
+                    content = f.read()
+                    replaced_count = content.count('\ufffd')  # Unicode replacement character
+                    if replaced_count > 0:
+                        logger.warning(f"Replaced {replaced_count} invalid characters with placeholder")
+                    return content
+            except Exception as e2:
+                logger.error(f"Failed to read file even with error replacement: {e2}")
+                raise
+        except Exception as e:
+            logger.error(f"Error reading file: {e}")
+            raise
     
     def detect_platform(self, file_path: Path) -> Optional[str]:
         """Detect platform from file path and name"""
@@ -190,19 +281,15 @@ class EnhancedETLParser:
         logger.warning(f"Could not detect platform from path: {file_path}")
         return None
     
-    def _detect_delimiter(self, file_path: Path, encoding: str, platform: str) -> str:
-        """Detect the actual delimiter used in the file"""
+    def _detect_delimiter(self, file_content: str, platform: str) -> str:
+        """FIXED: Detect the actual delimiter used in the file content"""
         config = self.platform_configs.get(platform, {})
         expected_delimiter = config.get('delimiter', '\t')
         
         try:
-            with open(file_path, 'r', encoding=encoding) as f:
-                # Read first few lines to detect delimiter
-                sample_lines = []
-                for i, line in enumerate(f):
-                    if i >= 5:  # Only check first 5 lines
-                        break
-                    sample_lines.append(line.strip())
+            # Get first few lines to test
+            lines = file_content.split('\n')[:5]
+            sample_lines = [line.strip() for line in lines if line.strip()]
             
             if not sample_lines:
                 return expected_delimiter
@@ -213,20 +300,30 @@ class EnhancedETLParser:
             
             for delimiter in delimiters:
                 score = 0
+                consistent_count = None
+                
                 for line in sample_lines:
                     if delimiter in line:
                         parts = line.split(delimiter)
-                        if len(parts) > 1:  # Must split into multiple parts
-                            score += len(parts)
+                        part_count = len(parts)
+                        
+                        if part_count > 1:  # Must split into multiple parts
+                            if consistent_count is None:
+                                consistent_count = part_count
+                                score += part_count * 2  # Bonus for splitting
+                            elif consistent_count == part_count:
+                                score += part_count * 3  # Bonus for consistency
+                            else:
+                                score += part_count  # Some penalty for inconsistency
                 
                 delimiter_scores[delimiter] = score
             
-            # Choose delimiter with highest score - Fixed max() usage
+            # Choose delimiter with highest score
             if delimiter_scores:
                 best_delimiter = max(delimiter_scores.keys(), key=lambda k: delimiter_scores[k])
                 
-                # Only use detected delimiter if it actually splits the data
-                if delimiter_scores[best_delimiter] > 0:
+                # Only use detected delimiter if it has a reasonable score
+                if delimiter_scores[best_delimiter] > 5:  # Minimum threshold
                     logger.debug(f"Detected delimiter: '{best_delimiter}' (score: {delimiter_scores[best_delimiter]})")
                     return best_delimiter
             
@@ -240,8 +337,7 @@ class EnhancedETLParser:
     def _parse_apple_format(self, file_path: Path, encoding: str) -> ParseResult:
         """Handle Apple's quote-wrapped tab-delimited format - FIXED"""
         try:
-            with open(file_path, 'r', encoding=encoding) as f:
-                content = f.read()
+            content = self._read_file_safely(file_path, encoding)
             
             # Split into lines
             lines = content.strip().split('\n')
@@ -295,9 +391,12 @@ class EnhancedETLParser:
     def _parse_facebook_format(self, file_path: Path, encoding: str) -> ParseResult:
         """Handle Facebook's quoted CSV format - FIXED"""
         try:
+            # Read file safely first
+            content = self._read_file_safely(file_path, encoding)
+            
+            # Use StringIO to parse
             df = pd.read_csv(
-                file_path,
-                encoding=encoding,
+                io.StringIO(content),
                 quoting=csv.QUOTE_ALL,
                 on_bad_lines='skip',
                 dtype=str
@@ -322,15 +421,18 @@ class EnhancedETLParser:
     def _parse_standard_format(self, file_path: Path, platform: str, encoding: str) -> ParseResult:
         """Handle standard TSV/CSV formats - FIXED"""
         try:
-            # Detect actual delimiter
-            delimiter = self._detect_delimiter(file_path, encoding, platform)
+            # Read file content safely
+            content = self._read_file_safely(file_path, encoding)
+            
+            # Detect actual delimiter from content
+            delimiter = self._detect_delimiter(content, platform)
             
             logger.debug(f"Using delimiter: '{delimiter}'")
             
+            # Parse using StringIO for consistent handling
             df = pd.read_csv(
-                file_path,
+                io.StringIO(content),
                 delimiter=delimiter,
-                encoding=encoding,
                 on_bad_lines='skip',
                 dtype=str
             )
@@ -382,7 +484,10 @@ class EnhancedETLParser:
                         actual_date_columns.append(col)
         
         for col in actual_date_columns:
-            df[col] = self._parse_date_column(df[col], platform)
+            try:
+                df[col] = self._parse_date_column(df[col], platform)
+            except Exception as e:
+                logger.warning(f"Failed to parse date column {col}: {e}")
         
         return df
     
@@ -486,7 +591,7 @@ class EnhancedETLParser:
                 error_message=f"File not found: {file_path}"
             )
         
-        # Detect platform and encoding
+        # Detect platform first
         platform = self.detect_platform(file_path)
         if not platform:
             return ParseResult(
@@ -494,34 +599,43 @@ class EnhancedETLParser:
                 error_message="Could not detect platform from file path"
             )
         
-        encoding = self.detect_encoding(file_path)
+        # Detect encoding with platform context
+        encoding = self.detect_encoding(file_path, platform)
         
         logger.info(f"Parsing {file_path.name} as {platform} with encoding {encoding}")
         
         # Use platform-specific parsing logic
-        if platform == PlatformCode.APPLE.value:
-            result = self._parse_apple_format(file_path, encoding)
-        elif platform == PlatformCode.FACEBOOK.value:
-            result = self._parse_facebook_format(file_path, encoding)
-        else:
-            result = self._parse_standard_format(file_path, platform, encoding)
-        
-        if not result.success:
-            return result
-        
-        # Standardize dates
         try:
-            result.data = self._standardize_dates(result.data, platform)
+            if platform == PlatformCode.APPLE.value:
+                result = self._parse_apple_format(file_path, encoding)
+            elif platform == PlatformCode.FACEBOOK.value:
+                result = self._parse_facebook_format(file_path, encoding)
+            else:
+                result = self._parse_standard_format(file_path, platform, encoding)
+            
+            if not result.success:
+                return result
+            
+            # Standardize dates
+            try:
+                result.data = self._standardize_dates(result.data, platform)
+            except Exception as e:
+                logger.warning(f"Date standardization failed: {e}")
+            
+            # Calculate quality score
+            result.quality_score = self._calculate_quality_score(result.data, platform)
+            
+            logger.info(f"Parsing complete: {result.records_parsed} records, "
+                       f"quality score: {result.quality_score:.1f}")
+            
+            return result
+            
         except Exception as e:
-            logger.warning(f"Date standardization failed: {e}")
-        
-        # Calculate quality score
-        result.quality_score = self._calculate_quality_score(result.data, platform)
-        
-        logger.info(f"Parsing complete: {result.records_parsed} records, "
-                   f"quality score: {result.quality_score:.1f}")
-        
-        return result
+            logger.error(f"Unexpected parsing error: {e}")
+            return ParseResult(
+                success=False,
+                error_message=f"Parsing failed: {str(e)}"
+            )
 
 
 # Example usage and testing
