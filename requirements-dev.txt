@@ -11,7 +11,7 @@ notebook==7.0.6                 # Jupyter notebook server
 # =====================================================
 # DEBUGGING & PROFILING
 # =====================================================
-pdb++==0.10.3                   # Enhanced Python debugger
+pdbpp==0.10.3                   # Enhanced Python debugger
 memory-profiler==0.61.0         # Memory usage profiling
 line-profiler==4.1.1            # Line-by-line profiling
 
