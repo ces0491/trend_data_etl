@@ -1,12 +1,13 @@
 # src/etl/data_processor.py
 """
-from __future__ import annotations
-
 Complete Data Processing Pipeline for Streaming Analytics Platform
 Integrates parsing, validation, standardization, and database storage
+Fixed version with proper imports
 """
+from __future__ import annotations
 
 import os
+import sys
 import hashlib
 import logging
 from datetime import datetime
@@ -16,13 +17,36 @@ from dataclasses import dataclass
 import pandas as pd
 from sqlalchemy.exc import IntegrityError
 
-# Import our custom modules (these would be in separate files)
-from .parsers.enhanced_parser import EnhancedETLParser, ParseResult
-from .validators.data_validator import StreamingDataValidator, ValidationResult
-from ..database.models import (
-    DatabaseManager, StreamingRecord, Artist, Track, Platform,
-    DataProcessingLog, QualityScore
-)
+# Fix import path issues
+current_dir = Path(__file__).parent
+project_root = current_dir.parent.parent
+src_dir = project_root / "src"
+
+# Add src to path if not already there
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+
+# Now import our custom modules with absolute imports
+try:
+    from etl.parsers.enhanced_parser import EnhancedETLParser, ParseResult
+    from etl.validators.data_validator import StreamingDataValidator, ValidationResult
+    from database.models import (
+        DatabaseManager, StreamingRecord, Artist, Track, Platform,
+        DataProcessingLog, QualityScore
+    )
+except ImportError as e:
+    # Fallback for different import scenarios
+    try:
+        from src.etl.parsers.enhanced_parser import EnhancedETLParser, ParseResult
+        from src.etl.validators.data_validator import StreamingDataValidator, ValidationResult
+        from src.database.models import (
+            DatabaseManager, StreamingRecord, Artist, Track, Platform,
+            DataProcessingLog, QualityScore
+        )
+    except ImportError:
+        print(f"Import error: {e}")
+        print("Please ensure you're running from the project root directory")
+        sys.exit(1)
 
 # Configure logging
 logging.basicConfig(
@@ -30,7 +54,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class ProcessingResult:
@@ -44,7 +67,6 @@ class ProcessingResult:
     processing_time: float = 0.0
     error_message: str | None = None
     validation_result: ValidationResult | None = None
-
 
 class StreamingDataProcessor:
     """
@@ -117,11 +139,6 @@ class StreamingDataProcessor:
                 # Continue processing but log the issue
             
             # Step 4: Standardize the data
-            if parse_result.data is None:
-                return self._create_failed_result(
-                    file_path, platform, "No data available for standardization"
-                )
-            
             standardized_data = self.standardizer.standardize_dataset(
                 parse_result.data, platform
             )
@@ -360,6 +377,8 @@ class StreamingDataProcessor:
             # Create processing log
             log_entry = DataProcessingLog(
                 file_path=str(file_path),
+                file_name=file_path.name,
+                file_size=file_path.stat().st_size if file_path.exists() else 0,
                 file_hash=file_hash,
                 platform_id=platform_record.id,
                 processing_status='completed',
@@ -389,6 +408,7 @@ class StreamingDataProcessor:
             quality_record = QualityScore(
                 platform_id=platform_record.id,
                 file_hash=file_hash,
+                file_path=str(file_path),
                 overall_score=validation_result.overall_score,
                 completeness_score=validation_result.completeness_score,
                 consistency_score=validation_result.consistency_score,
@@ -420,7 +440,6 @@ class StreamingDataProcessor:
             error_message=error_message
         )
 
-
 class DataStandardizer:
     """
     Transforms platform-specific data into standardized format
@@ -435,6 +454,7 @@ class DataStandardizer:
             "apl-apple": {
                 "artist_name": "artist_name",
                 "song_name": "track_title", 
+                "title": "track_title",
                 "report_date": "date",
                 "quantity": "metric_value",
                 "customer_currency": "geography",  # Approximate mapping
@@ -458,7 +478,32 @@ class DataStandardizer:
                 "streams": "metric_value",
                 "date": "date",
             },
-            # Add more mappings as needed
+            "boo-boomplay": {
+                "title": "track_title",
+                "artist_name": "artist_name",
+                "streams": "metric_value",
+                "date": "date",
+                "country": "geography",
+            },
+            "awa-awa": {
+                "title": "track_title", 
+                "artist_name": "artist_name",
+                "plays": "metric_value",
+                "date": "date",
+            },
+            "vvo-vevo": {
+                "track_title": "track_title",
+                "artist_name": "artist_name",
+                "views": "metric_value",
+                "date": "date",
+            },
+            "dzr-deezer": {
+                "track_name": "track_title",
+                "artist_name": "artist_name", 
+                "streams": "metric_value",
+                "date": "date",
+                "isrc": "isrc",
+            },
         }
     
     def standardize_dataset(self, df: pd.DataFrame, platform: str) -> list[dict]:
@@ -499,7 +544,6 @@ class DataStandardizer:
         except Exception as e:
             logger.error(f"Failed to standardize record: {e}")
             return None
-
 
 # Command line interface and testing
 def main():
@@ -567,7 +611,6 @@ def main():
     
     except Exception as e:
         print(f"Error: {e}")
-
 
 if __name__ == "__main__":
     main()

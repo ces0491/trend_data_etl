@@ -35,6 +35,9 @@ data/temp/
 *.csv
 *.tsv
 *.txt
+!requirements.txt
+!requirements-dev.txt
+!README.txt
 *.xlsx
 *.xls
 *.gz
