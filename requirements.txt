@@ -1,12 +1,24 @@
+# Core FastAPI and web framework dependencies
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# Database dependencies
 sqlalchemy==2.0.23
 psycopg2-binary==2.9.9
+alembic==1.12.1
+
+# Data processing dependencies
 pandas==2.1.4
-python-dotenv==1.0.0
+numpy==1.25.2
+openpyxl==3.1.2
 chardet==5.2.0
 python-dateutil==2.8.2
+
+# Environment and configuration
+python-dotenv==1.0.0
 pydantic==2.5.0
-openpyxl==3.1.2
-numpy==1.25.2
+pydantic-settings==2.1.0
+
+# HTTP client for external requests
 requests==2.31.0

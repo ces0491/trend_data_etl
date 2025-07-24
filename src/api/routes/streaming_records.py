@@ -1,10 +1,12 @@
-# src/api/routes/streaming_records.py
+# src/api/routes/streaming_records.py - FIXED VERSION
 """
 Streaming records data access endpoints
+Fixed version with proper type handling and None checks
 """
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from typing import Optional, List, Union
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_, desc
@@ -19,18 +21,18 @@ from database.models import StreamingRecord, Track, Artist, Platform
 router = APIRouter()
 
 
-@router.get("", response_model=list[StreamingRecordResponse])
+@router.get("", response_model=List[StreamingRecordResponse])
 async def get_streaming_records(
-    platform: str | None = Query(None, description="Platform code filter"),
-    artist_name: str | None = Query(None, description="Artist name filter (partial match)"),
-    track_title: str | None = Query(None, description="Track title filter (partial match)"),
-    date_from: date | None = Query(None, description="Start date filter (YYYY-MM-DD)"),
-    date_to: date | None = Query(None, description="End date filter (YYYY-MM-DD)"),
-    geography: str | None = Query(None, description="Geography/country filter"),
-    metric_type: MetricType | None = Query(None, description="Metric type filter"),
-    device_type: DeviceType | None = Query(None, description="Device type filter"),
-    subscription_type: SubscriptionType | None = Query(None, description="Subscription type filter"),
-    min_quality_score: float | None = Query(None, ge=0, le=100, description="Minimum quality score"),
+    platform: Optional[str] = Query(None, description="Platform code filter"),
+    artist_name: Optional[str] = Query(None, description="Artist name filter (partial match)"),
+    track_title: Optional[str] = Query(None, description="Track title filter (partial match)"),
+    date_from: Optional[date] = Query(None, description="Start date filter (YYYY-MM-DD)"),
+    date_to: Optional[date] = Query(None, description="End date filter (YYYY-MM-DD)"),
+    geography: Optional[str] = Query(None, description="Geography/country filter"),
+    metric_type: Optional[MetricType] = Query(None, description="Metric type filter"),
+    device_type: Optional[DeviceType] = Query(None, description="Device type filter"),
+    subscription_type: Optional[SubscriptionType] = Query(None, description="Subscription type filter"),
+    min_quality_score: Optional[float] = Query(None, ge=0, le=100, description="Minimum quality score"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of results"),
     offset: int = Query(0, ge=0, description="Number of records to skip"),
     session: Session = Depends(get_db_session)
@@ -134,10 +136,10 @@ async def get_streaming_records(
 
 @router.get("/paginated")
 async def get_streaming_records_paginated(
-    platform: str | None = Query(None, description="Platform code filter"),
-    artist_name: str | None = Query(None, description="Artist name filter"),
-    date_from: date | None = Query(None, description="Start date filter"),
-    date_to: date | None = Query(None, description="End date filter"),
+    platform: Optional[str] = Query(None, description="Platform code filter"),
+    artist_name: Optional[str] = Query(None, description="Artist name filter"),
+    date_from: Optional[date] = Query(None, description="Start date filter"),
+    date_to: Optional[date] = Query(None, description="End date filter"),
     pagination: PaginationParams = Depends(get_pagination_params),
     session: Session = Depends(get_db_session)
 ):
@@ -217,12 +219,12 @@ async def get_streaming_records_paginated(
 
 @router.get("/time-series")
 async def get_time_series_data(
-    platforms: list[str] = Query(None, description="Platform codes to include"),
-    metric_types: list[MetricType] = Query(None, description="Metric types to include"),
+    platforms: Optional[List[str]] = Query(None, description="Platform codes to include"),
+    metric_types: Optional[List[MetricType]] = Query(None, description="Metric types to include"),
     date_from: date = Query(..., description="Start date for analysis"),
     date_to: date = Query(..., description="End date for analysis"),
     aggregation: str = Query("daily", regex="^(daily|weekly|monthly)$", description="Time aggregation"),
-    geography: str | None = Query(None, description="Geography filter"),
+    geography: Optional[str] = Query(None, description="Geography filter"),
     session: Session = Depends(get_db_session)
 ):
     """
@@ -309,8 +311,8 @@ async def get_time_series_data(
 
 @router.get("/summary")
 async def get_streaming_summary(
-    date_from: date | None = Query(None, description="Start date for summary"),
-    date_to: date | None = Query(None, description="End date for summary"),
+    date_from: Optional[date] = Query(None, description="Start date for summary"),
+    date_to: Optional[date] = Query(None, description="End date for summary"),
     session: Session = Depends(get_db_session)
 ):
     """
@@ -336,14 +338,33 @@ async def get_streaming_summary(
             )
         )
     
-    # Overall statistics
-    overall_stats = query.with_entities(
+    # Overall statistics - Fixed None handling
+    overall_stats_result = query.with_entities(
         func.count(StreamingRecord.id).label('total_records'),
         func.sum(StreamingRecord.metric_value).label('total_streams'),
         func.avg(StreamingRecord.data_quality_score).label('avg_quality'),
         func.count(func.distinct(StreamingRecord.artist_name)).label('unique_artists'),
         func.count(func.distinct(StreamingRecord.track_title)).label('unique_tracks')
     ).first()
+    
+    # Handle None values from query results - Fixed None check
+    if overall_stats_result is not None:
+        overall_stats = {
+            'total_records': overall_stats_result.total_records or 0,
+            'total_streams': float(overall_stats_result.total_streams) if overall_stats_result.total_streams is not None else 0.0,
+            'avg_quality': float(overall_stats_result.avg_quality) if overall_stats_result.avg_quality is not None else 0.0,
+            'unique_artists': overall_stats_result.unique_artists or 0,
+            'unique_tracks': overall_stats_result.unique_tracks or 0
+        }
+    else:
+        # Fallback if no results found
+        overall_stats = {
+            'total_records': 0,
+            'total_streams': 0.0,
+            'avg_quality': 0.0,
+            'unique_artists': 0,
+            'unique_tracks': 0
+        }
     
     # Platform breakdown
     platform_breakdown = query.with_entities(
@@ -383,33 +404,27 @@ async def get_streaming_summary(
             "to_date": date_to.isoformat(),
             "days": (date_to - date_from).days
         },
-        "overall_statistics": {
-            "total_records": overall_stats.total_records or 0,
-            "total_streams": float(overall_stats.total_streams) if overall_stats.total_streams else 0.0,
-            "average_quality_score": float(overall_stats.avg_quality) if overall_stats.avg_quality else 0.0,
-            "unique_artists": overall_stats.unique_artists or 0,
-            "unique_tracks": overall_stats.unique_tracks or 0
-        },
+        "overall_statistics": overall_stats,
         "platform_breakdown": [
             {
                 "platform_code": p.code,
                 "platform_name": p.name,
-                "streams": float(p.platform_streams) if p.platform_streams else 0.0,
+                "streams": float(p.platform_streams) if p.platform_streams is not None else 0.0,
                 "records": p.platform_records or 0,
-                "percentage": (float(p.platform_streams) / float(overall_stats.total_streams) * 100) if overall_stats.total_streams else 0.0
+                "percentage": (float(p.platform_streams) / overall_stats['total_streams'] * 100) if overall_stats['total_streams'] > 0 else 0.0
             } for p in platform_breakdown
         ],
         "geographic_breakdown": [
             {
                 "geography": g.geography,
-                "streams": float(g.geo_streams) if g.geo_streams else 0.0,
+                "streams": float(g.geo_streams) if g.geo_streams is not None else 0.0,
                 "records": g.geo_records or 0
             } for g in geographic_breakdown
         ],
         "device_breakdown": [
             {
                 "device_type": d.device_type,
-                "streams": float(d.device_streams) if d.device_streams else 0.0,
+                "streams": float(d.device_streams) if d.device_streams is not None else 0.0,
                 "records": d.device_records or 0
             } for d in device_breakdown
         ]

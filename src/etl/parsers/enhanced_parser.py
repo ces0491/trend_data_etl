@@ -3,10 +3,11 @@
 Enhanced ETL Parser System for Streaming Analytics Platform - FIXED
 
 Key fixes:
-1. Improved Apple quote-wrapped parsing
+1. Fixed type annotations and None handling
 2. Better delimiter detection
 3. Enhanced CSV format handling
 4. Fixed date parsing logic
+5. Proper error handling for edge cases
 """
 
 import csv
@@ -18,6 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass
 from enum import Enum
+from typing import Optional, List, Dict, Any
 
 import pandas as pd
 from dateutil import parser as date_parser
@@ -44,13 +46,13 @@ class PlatformCode(Enum):
 class ParseResult:
     """Result from parsing operation"""
     success: bool
-    data: pd.DataFrame | None = None
-    error_message: str | None = None
+    data: Optional[pd.DataFrame] = None
+    error_message: Optional[str] = None
     quality_score: float = 0.0
     records_parsed: int = 0
     records_failed: int = 0
-    encoding_detected: str | None = None
-    format_detected: str | None = None
+    encoding_detected: Optional[str] = None
+    format_detected: Optional[str] = None
 
 
 class EnhancedETLParser:
@@ -71,7 +73,7 @@ class EnhancedETLParser:
         
         self.platform_configs = self._load_platform_configs()
     
-    def _load_platform_configs(self) -> dict[str, dict]:
+    def _load_platform_configs(self) -> Dict[str, Dict[str, Any]]:
         """Load platform-specific parsing configurations"""
         return {
             PlatformCode.APPLE.value: {
@@ -121,7 +123,7 @@ class EnhancedETLParser:
                 "numeric_columns": ["streams", "stream_share"],
             },
             PlatformCode.VEVO.value: {
-                "delimiter": ",",  # FIXED: Vevo uses CSV
+                "delimiter": ",",  # Vevo uses CSV
                 "encoding_priority": ["utf-8"],
                 "date_columns": ["date"],
                 "expected_columns": ["video_id", "views", "date"],
@@ -135,7 +137,7 @@ class EnhancedETLParser:
                 "numeric_columns": ["plays", "duration"],
             },
             PlatformCode.DEEZER.value: {
-                "delimiter": ",",  # FIXED: Deezer uses CSV based on sample
+                "delimiter": ",",  # Deezer uses CSV based on sample
                 "encoding_priority": ["utf-8", "cp1252"],
                 "date_columns": ["date"],
                 "expected_columns": ["isrc", "track_name", "streams"],
@@ -143,10 +145,8 @@ class EnhancedETLParser:
             }
         }
     
-    def detect_encoding(self, file_path: str | Path) -> str:
+    def detect_encoding(self, file_path: Path) -> str:
         """Detect file encoding with fallback strategy"""
-        file_path = Path(file_path)
-        
         try:
             with open(file_path, 'rb') as f:
                 raw_data = f.read(10000)  # Read first 10KB for detection
@@ -166,9 +166,8 @@ class EnhancedETLParser:
             logger.error(f"Encoding detection failed: {e}")
             return 'utf-8'
     
-    def detect_platform(self, file_path: str | Path) -> str | None:
+    def detect_platform(self, file_path: Path) -> Optional[str]:
         """Detect platform from file path and name"""
-        file_path = Path(file_path)
         path_str = str(file_path).lower()
         
         # Platform detection from path
@@ -222,16 +221,17 @@ class EnhancedETLParser:
                 
                 delimiter_scores[delimiter] = score
             
-            # Choose delimiter with highest score
-            best_delimiter = max(delimiter_scores, key=delimiter_scores.get)
+            # Choose delimiter with highest score - Fixed max() usage
+            if delimiter_scores:
+                best_delimiter = max(delimiter_scores.keys(), key=lambda k: delimiter_scores[k])
+                
+                # Only use detected delimiter if it actually splits the data
+                if delimiter_scores[best_delimiter] > 0:
+                    logger.debug(f"Detected delimiter: '{best_delimiter}' (score: {delimiter_scores[best_delimiter]})")
+                    return best_delimiter
             
-            # Only use detected delimiter if it actually splits the data
-            if delimiter_scores[best_delimiter] > 0:
-                logger.debug(f"Detected delimiter: '{best_delimiter}' (score: {delimiter_scores[best_delimiter]})")
-                return best_delimiter
-            else:
-                logger.debug(f"Using expected delimiter: '{expected_delimiter}'")
-                return expected_delimiter
+            logger.debug(f"Using expected delimiter: '{expected_delimiter}'")
+            return expected_delimiter
                 
         except Exception as e:
             logger.debug(f"Delimiter detection failed: {e}, using expected: '{expected_delimiter}'")
@@ -354,7 +354,7 @@ class EnhancedETLParser:
                 error_message=f"Standard format parsing failed: {str(e)}"
             )
     
-    def _standardize_dates(self, df: pd.DataFrame | None, platform: str) -> pd.DataFrame | None:
+    def _standardize_dates(self, df: Optional[pd.DataFrame], platform: str) -> Optional[pd.DataFrame]:
         """Standardize date formats based on platform-specific patterns - IMPROVED"""
         if df is None:
             return None
@@ -431,7 +431,7 @@ class EnhancedETLParser:
         
         return pd.Series(parsed_dates)
     
-    def _calculate_quality_score(self, df: pd.DataFrame | None, platform: str) -> float:
+    def _calculate_quality_score(self, df: Optional[pd.DataFrame], platform: str) -> float:
         """Calculate data quality score (0-100)"""
         if df is None or df.empty:
             return 0.0
@@ -478,10 +478,8 @@ class EnhancedETLParser:
         
         return sum(scores)
     
-    def parse_file(self, file_path: str | Path) -> ParseResult:
+    def parse_file(self, file_path: Path) -> ParseResult:
         """Main parsing method that handles all platform formats - FIXED"""
-        file_path = Path(file_path)
-        
         if not file_path.exists():
             return ParseResult(
                 success=False,

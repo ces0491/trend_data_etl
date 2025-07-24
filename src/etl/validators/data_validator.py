@@ -1,10 +1,10 @@
-# src/etl/validators/data_validator.py
+# src/etl/validators/data_validator.py - FIXED VERSION
 """
-from __future__ import annotations
-
 Comprehensive Data Validation & Quality Framework
 Based on real-world data analysis findings from 19 sample files
+Fixed version with proper imports and syntax
 """
+from __future__ import annotations
 
 import re
 import logging

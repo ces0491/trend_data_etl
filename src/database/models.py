@@ -1,17 +1,17 @@
-from __future__ import annotations
-
-# src/database/models.py - CLEANED VERSION
+# src/database/models.py - FIXED VERSION
 """
 Database models and schema for Streaming Analytics Platform
-SQLAlchemy models only - API models moved to src/api/models.py
+Fixed version with proper type annotations and SQLAlchemy compatibility
 """
+
+from __future__ import annotations
 
 from datetime import datetime
 import uuid
 import os
 import logging
 import json
-from typing import Any
+from typing import Any, Optional
 
 from sqlalchemy import (
     Column, Integer, String, DateTime, Numeric, Text, 
@@ -19,7 +19,7 @@ from sqlalchemy import (
     create_engine, text
 )
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, sessionmaker
+from sqlalchemy.orm import relationship, sessionmaker, Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.types import TypeDecorator, CHAR
 from contextlib import contextmanager
@@ -87,108 +87,108 @@ class Platform(Base):
     """Reference table for streaming platforms"""
     __tablename__ = 'platforms'
     
-    id = Column(Integer, primary_key=True)
-    code = Column(String(50), unique=True, nullable=False, index=True)
-    name = Column(String(100), nullable=False)
-    description = Column(Text)
-    is_active = Column(Boolean, default=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     
     # Configuration stored as JSON/Text
-    file_patterns = Column(get_json_type())
-    date_formats = Column(get_json_type())
-    delimiter_type = Column(String(20), default='auto')
-    encoding = Column(String(20), default='utf-8')
+    file_patterns: Mapped[Optional[dict]] = mapped_column(get_json_type(), nullable=True)
+    date_formats: Mapped[Optional[dict]] = mapped_column(get_json_type(), nullable=True)
+    delimiter_type: Mapped[str] = mapped_column(String(20), default='auto')
+    encoding: Mapped[str] = mapped_column(String(20), default='utf-8')
     
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
-    streaming_records = relationship("StreamingRecord", back_populates="platform")
-    processing_logs = relationship("DataProcessingLog", back_populates="platform")
-    quality_scores = relationship("QualityScore", back_populates="platform")
+    streaming_records: Mapped[list["StreamingRecord"]] = relationship("StreamingRecord", back_populates="platform")
+    processing_logs: Mapped[list["DataProcessingLog"]] = relationship("DataProcessingLog", back_populates="platform")
+    quality_scores: Mapped[list["QualityScore"]] = relationship("QualityScore", back_populates="platform")
 
 class Artist(Base):
     """Deduplicated artist data"""
     __tablename__ = 'artists'
     
-    id = Column(Integer, primary_key=True)
-    name = Column(String(500), nullable=False, index=True)
-    name_normalized = Column(String(500), nullable=False, index=True)
-    external_ids = Column(get_json_type())
-    artist_metadata = Column(get_json_type())  # Renamed from metadata to avoid conflict
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
+    name_normalized: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
+    external_ids: Mapped[Optional[dict]] = mapped_column(get_json_type(), nullable=True)
+    artist_metadata: Mapped[Optional[dict]] = mapped_column(get_json_type(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
-    tracks = relationship("Track", back_populates="artist")
+    tracks: Mapped[list["Track"]] = relationship("Track", back_populates="artist")
 
 class Track(Base):
     """Track metadata with ISRC as primary identifier"""
     __tablename__ = 'tracks'
     
-    id = Column(Integer, primary_key=True)
-    isrc = Column(String(12), unique=True, nullable=True, index=True)
-    title = Column(String(1000), nullable=False, index=True)
-    title_normalized = Column(String(1000), nullable=False, index=True)
-    album_name = Column(String(1000))
-    duration_ms = Column(Integer)
-    genre = Column(String(200))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    isrc: Mapped[Optional[str]] = mapped_column(String(12), unique=True, nullable=True, index=True)
+    title: Mapped[str] = mapped_column(String(1000), nullable=False, index=True)
+    title_normalized: Mapped[str] = mapped_column(String(1000), nullable=False, index=True)
+    album_name: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    genre: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     
     # Foreign Keys
-    artist_id = Column(Integer, ForeignKey('artists.id'), nullable=False)
+    artist_id: Mapped[int] = mapped_column(Integer, ForeignKey('artists.id'), nullable=False)
     
-    # Metadata - renamed to avoid SQLAlchemy conflict
-    external_ids = Column(get_json_type())
-    track_metadata = Column(get_json_type())  # Renamed from metadata
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Metadata
+    external_ids: Mapped[Optional[dict]] = mapped_column(get_json_type(), nullable=True)
+    track_metadata: Mapped[Optional[dict]] = mapped_column(get_json_type(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
-    artist = relationship("Artist", back_populates="tracks")
-    streaming_records = relationship("StreamingRecord", back_populates="track")
+    artist: Mapped["Artist"] = relationship("Artist", back_populates="tracks")
+    streaming_records: Mapped[list["StreamingRecord"]] = relationship("StreamingRecord", back_populates="track")
 
 class StreamingRecord(Base):
     """Main hypertable for streaming data - optimized for time-series queries"""
     __tablename__ = 'streaming_records'
     
-    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
-    date = Column(DateTime, nullable=False, index=True)
+    id: Mapped[str] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    date: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
     
     # Foreign Keys
-    platform_id = Column(Integer, ForeignKey('platforms.id'), nullable=False)
-    track_id = Column(Integer, ForeignKey('tracks.id'), nullable=True)
+    platform_id: Mapped[int] = mapped_column(Integer, ForeignKey('platforms.id'), nullable=False)
+    track_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey('tracks.id'), nullable=True)
     
     # Store denormalized data for performance
-    artist_name = Column(String(500))  # Denormalized for performance
-    track_title = Column(String(1000))  # Denormalized for performance
-    album_name = Column(String(1000))
+    artist_name: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    track_title: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    album_name: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     
     # Core metrics
-    metric_type = Column(String(50), nullable=False)
-    metric_value = Column(Numeric(15, 2), nullable=False)
+    metric_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    metric_value: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False)
     
     # Dimensions
-    geography = Column(String(10))
-    device_type = Column(String(20))
-    subscription_type = Column(String(20))
-    context_type = Column(String(50))
+    geography: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    device_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    subscription_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    context_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     
     # Demographics and other metadata
-    user_demographic = Column(get_json_type())
-    genre = Column(String(200))
+    user_demographic: Mapped[Optional[dict]] = mapped_column(get_json_type(), nullable=True)
+    genre: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     
     # Data quality and lineage
-    data_quality_score = Column(Numeric(5, 2))
-    raw_data_source = Column(String(500))
-    file_hash = Column(String(64))
-    processing_timestamp = Column(DateTime, default=datetime.utcnow)
+    data_quality_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
+    raw_data_source: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    file_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    processing_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime, default=datetime.utcnow)
     
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
-    platform = relationship("Platform", back_populates="streaming_records")
-    track = relationship("Track", back_populates="streaming_records")
+    platform: Mapped["Platform"] = relationship("Platform", back_populates="streaming_records")
+    track: Mapped[Optional["Track"]] = relationship("Track", back_populates="streaming_records")
     
     # Indexes
     __table_args__ = (
@@ -205,87 +205,87 @@ class DataProcessingLog(Base):
     """Audit trail for ETL processing"""
     __tablename__ = 'data_processing_logs'
     
-    id = Column(Integer, primary_key=True)
-    file_path = Column(String(1000), nullable=False)
-    file_name = Column(String(255), nullable=False)
-    file_size = Column(Integer)
-    file_hash = Column(String(64), nullable=False, index=True)
-    platform_id = Column(Integer, ForeignKey('platforms.id'), nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    file_path: Mapped[str] = mapped_column(String(1000), nullable=False)
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    file_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    platform_id: Mapped[int] = mapped_column(Integer, ForeignKey('platforms.id'), nullable=False)
     
     # Processing details
-    processing_status = Column(String(20), nullable=False)
-    records_processed = Column(Integer, default=0)
-    records_failed = Column(Integer, default=0)
-    records_skipped = Column(Integer, default=0)
-    quality_score = Column(Numeric(5, 2))
-    error_message = Column(Text)
-    error_details = Column(get_json_type())
+    processing_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    records_processed: Mapped[int] = mapped_column(Integer, default=0)
+    records_failed: Mapped[int] = mapped_column(Integer, default=0)
+    records_skipped: Mapped[int] = mapped_column(Integer, default=0)
+    quality_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_details: Mapped[Optional[dict]] = mapped_column(get_json_type(), nullable=True)
     
     # Processing metadata
-    processing_config = Column(get_json_type())
-    performance_metrics = Column(get_json_type())
+    processing_config: Mapped[Optional[dict]] = mapped_column(get_json_type(), nullable=True)
+    performance_metrics: Mapped[Optional[dict]] = mapped_column(get_json_type(), nullable=True)
     
     # Timestamps
-    started_at = Column(DateTime, default=datetime.utcnow)
-    completed_at = Column(DateTime)
-    processing_duration_ms = Column(Integer)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    processing_duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     
     # Relationships
-    platform = relationship("Platform", back_populates="processing_logs")
+    platform: Mapped["Platform"] = relationship("Platform", back_populates="processing_logs")
 
 class QualityScore(Base):
     """Data quality tracking by file and platform"""
     __tablename__ = 'quality_scores'
     
-    id = Column(Integer, primary_key=True)
-    platform_id = Column(Integer, ForeignKey('platforms.id'), nullable=False)
-    file_hash = Column(String(64), nullable=False, index=True)
-    file_path = Column(String(1000))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    platform_id: Mapped[int] = mapped_column(Integer, ForeignKey('platforms.id'), nullable=False)
+    file_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    file_path: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     
     # Quality metrics
-    overall_score = Column(Numeric(5, 2), nullable=False)
-    completeness_score = Column(Numeric(5, 2))
-    consistency_score = Column(Numeric(5, 2))
-    validity_score = Column(Numeric(5, 2))
-    accuracy_score = Column(Numeric(5, 2))
+    overall_score: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+    completeness_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
+    consistency_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
+    validity_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
+    accuracy_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
     
     # Detailed quality info
-    quality_details = Column(get_json_type())
-    validation_results = Column(get_json_type())
-    issues_found = Column(get_json_type())
-    recommendations = Column(get_json_type())
+    quality_details: Mapped[Optional[dict]] = mapped_column(get_json_type(), nullable=True)
+    validation_results: Mapped[Optional[dict]] = mapped_column(get_json_type(), nullable=True)
+    issues_found: Mapped[Optional[dict]] = mapped_column(get_json_type(), nullable=True)
+    recommendations: Mapped[Optional[list]] = mapped_column(get_json_type(), nullable=True)
     
     # Timestamps
-    measured_at = Column(DateTime, default=datetime.utcnow)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    measured_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     
     # Relationships
-    platform = relationship("Platform", back_populates="quality_scores")
+    platform: Mapped["Platform"] = relationship("Platform", back_populates="quality_scores")
 
 class FileProcessingQueue(Base):
     """File processing queue for batch processing"""
     __tablename__ = 'file_processing_queue'
     
-    id = Column(Integer, primary_key=True)
-    file_path = Column(String(1000), nullable=False)
-    file_hash = Column(String(64))
-    platform_id = Column(Integer, ForeignKey('platforms.id'))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    file_path: Mapped[str] = mapped_column(String(1000), nullable=False)
+    file_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    platform_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey('platforms.id'), nullable=True)
     
-    priority = Column(Integer, default=5)
-    status = Column(String(20), default='pending')
-    attempts = Column(Integer, default=0)
-    max_attempts = Column(Integer, default=3)
-    error_message = Column(Text)
+    priority: Mapped[int] = mapped_column(Integer, default=5)
+    status: Mapped[str] = mapped_column(String(20), default='pending')
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
-    scheduled_at = Column(DateTime, default=datetime.utcnow)
-    started_at = Column(DateTime)
-    completed_at = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
-    platform = relationship("Platform")
+    platform: Mapped[Optional["Platform"]] = relationship("Platform")
 
 class DatabaseManager:
     """Manages database connections and TimescaleDB setup"""
@@ -301,9 +301,8 @@ class DatabaseManager:
             'echo': os.getenv('DATABASE_DEBUG', 'false').lower() == 'true'
         }
         
-        # Add PostgreSQL-specific settings - Fixed type issues
+        # Add PostgreSQL-specific settings
         if 'postgresql' in self.database_url.lower():
-            # Create a separate dict for PostgreSQL settings to avoid type conflicts
             postgres_settings = {
                 'pool_size': 10,
                 'max_overflow': 20,
@@ -320,7 +319,6 @@ class DatabaseManager:
     
     def setup_timescaledb(self):
         """Setup TimescaleDB hypertable and optimizations"""
-        # Fixed: Ensure database_url is not None before calling .lower()
         if self.database_url and 'sqlite' in self.database_url.lower():
             logger.info("SQLite detected - skipping TimescaleDB setup")
             return

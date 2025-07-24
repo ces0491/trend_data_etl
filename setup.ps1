@@ -1,5 +1,5 @@
-# setup.ps1 - PowerShell Development Commands (Updated for SQLite + Render workflow)
-# Trend Data ETL Platform - No Docker Required
+# setup.ps1 - PowerShell Development Commands
+# Trend Data ETL Platform
 
 param(
     [Parameter(Position=0)]

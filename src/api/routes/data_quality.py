@@ -1,10 +1,12 @@
 # src/api/routes/data_quality.py
 """
 Data quality monitoring and reporting endpoints
+Fixed version with proper type handling and imports
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import Optional, List, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, and_
@@ -12,7 +14,7 @@ from sqlalchemy import func, desc, and_
 from api.dependencies import get_db_session, get_pagination_params, PaginationParams
 from api.models import (
     QualitySummaryResponse, QualityDetailResponse, ProcessingLogResponse,
-    PaginatedResponse, PaginationResponse
+    PaginatedResponse, PaginationResponse, ProcessingStatus
 )
 from database.models import QualityScore, DataProcessingLog, Platform, StreamingRecord
 
@@ -63,12 +65,14 @@ async def get_quality_summary(
         QualityScore.measured_at >= date_threshold
     ).distinct().count()
     
-    # Get total records processed from processing logs
-    total_records = session.query(
+    # Get total records processed from processing logs - Fixed type handling
+    total_records_result = session.query(
         func.sum(DataProcessingLog.records_processed)
     ).filter(
         DataProcessingLog.started_at >= date_threshold
-    ).scalar() or 0
+    ).scalar()
+    
+    total_records = int(total_records_result) if total_records_result is not None else 0
     
     return QualitySummaryResponse(
         total_files_processed=total_files,
@@ -81,11 +85,11 @@ async def get_quality_summary(
     )
 
 
-@router.get("/details", response_model=list[QualityDetailResponse])
+@router.get("/details", response_model=List[QualityDetailResponse])
 async def get_quality_details(
-    platform: str | None = Query(None, description="Filter by platform code"),
-    min_score: float | None = Query(None, ge=0, le=100, description="Minimum quality score filter"),
-    max_score: float | None = Query(None, ge=0, le=100, description="Maximum quality score filter"),
+    platform: Optional[str] = Query(None, description="Filter by platform code"),
+    min_score: Optional[float] = Query(None, ge=0, le=100, description="Minimum quality score filter"),
+    max_score: Optional[float] = Query(None, ge=0, le=100, description="Maximum quality score filter"),
     days: int = Query(30, ge=1, le=365, description="Number of days to look back"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of results"),
     session: Session = Depends(get_db_session)
@@ -137,7 +141,7 @@ async def get_quality_details(
 
 @router.get("/trends")
 async def get_quality_trends(
-    platform: str | None = Query(None, description="Filter by platform code"),
+    platform: Optional[str] = Query(None, description="Filter by platform code"),
     days: int = Query(90, ge=7, le=365, description="Number of days for trend analysis"),
     aggregation: str = Query("daily", regex="^(daily|weekly|monthly)$", description="Aggregation period"),
     session: Session = Depends(get_db_session)
@@ -323,10 +327,10 @@ async def get_platform_quality(
     }
 
 
-@router.get("/processing-logs", response_model=list[ProcessingLogResponse])
+@router.get("/processing-logs", response_model=List[ProcessingLogResponse])
 async def get_processing_logs(
-    platform: str | None = Query(None, description="Filter by platform code"),
-    status: str | None = Query(None, description="Filter by processing status"),
+    platform: Optional[str] = Query(None, description="Filter by platform code"),
+    status: Optional[str] = Query(None, description="Filter by processing status"),
     days: int = Query(7, ge=1, le=90, description="Number of days to look back"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of results"),
     session: Session = Depends(get_db_session)
@@ -363,7 +367,7 @@ async def get_processing_logs(
             file_size=log.file_size,
             platform_code=log.platform.code,
             platform_name=log.platform.name,
-            processing_status=log.processing_status,
+            processing_status=ProcessingStatus(log.processing_status),  # Fixed enum usage
             records_processed=log.records_processed,
             records_failed=log.records_failed,
             records_skipped=log.records_skipped,
@@ -378,8 +382,8 @@ async def get_processing_logs(
 
 @router.get("/issues")
 async def get_quality_issues(
-    platform: str | None = Query(None, description="Filter by platform code"),
-    severity: str | None = Query(None, description="Filter by issue severity"),
+    platform: Optional[str] = Query(None, description="Filter by platform code"),
+    severity: Optional[str] = Query(None, description="Filter by issue severity"),
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of issues"),
     session: Session = Depends(get_db_session)
@@ -446,7 +450,7 @@ async def get_quality_issues(
 
 @router.get("/report")
 async def generate_quality_report(
-    platform: str | None = Query(None, description="Generate report for specific platform"),
+    platform: Optional[str] = Query(None, description="Generate report for specific platform"),
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
     session: Session = Depends(get_db_session)
 ):

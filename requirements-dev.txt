@@ -2,6 +2,22 @@
 # Install with: pip install -r requirements.txt -r requirements-dev.txt
 
 # =====================================================
+# CORE TESTING FRAMEWORK
+# =====================================================
+pytest==7.4.3                   # Base testing framework
+pytest-asyncio==0.21.1          # Async testing support
+pytest-cov==4.1.0               # Coverage reporting
+httpx==0.25.2                   # FastAPI testing client
+
+# =====================================================
+# TYPE CHECKING & LINTING
+# =====================================================
+mypy==1.7.1                     # Static type checking
+pylint==3.0.3                   # Code linting
+black==23.11.0                  # Code formatting
+isort==5.12.0                   # Import sorting
+
+# =====================================================
 # DEVELOPMENT TOOLS
 # =====================================================
 ipython==8.17.2                 # Enhanced interactive Python shell
