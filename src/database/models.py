@@ -1,7 +1,7 @@
-# src/database/models.py
+# src/database/models.py - Fixed Version
 """
 Database models and schema for Streaming Analytics Platform
-Fixed version resolving SQLAlchemy metadata conflict and import issues
+Fixed version resolving type annotation issues and None handling
 """
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from datetime import datetime
 import uuid
 import os
 import logging
+from typing import Any
 
 from sqlalchemy import (
     Column, Integer, String, DateTime, Numeric, Text, 
@@ -268,17 +269,19 @@ class DatabaseManager:
             raise ValueError("DATABASE_URL not provided")
         
         # Create engine with appropriate settings
-        engine_kwargs = {
+        engine_kwargs: dict[str, Any] = {
             'pool_pre_ping': True,
             'echo': os.getenv('DATABASE_DEBUG', 'false').lower() == 'true'
         }
         
-        # Add PostgreSQL-specific settings
+        # Add PostgreSQL-specific settings - Fixed type issues
         if 'postgresql' in self.database_url.lower():
-            engine_kwargs.update({
+            # Create a separate dict for PostgreSQL settings to avoid type conflicts
+            postgres_settings = {
                 'pool_size': 10,
                 'max_overflow': 20,
-            })
+            }
+            engine_kwargs.update(postgres_settings)
         
         self.engine = create_engine(self.database_url, **engine_kwargs)
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
@@ -290,7 +293,8 @@ class DatabaseManager:
     
     def setup_timescaledb(self):
         """Setup TimescaleDB hypertable and optimizations"""
-        if 'sqlite' in self.database_url.lower():
+        # Fixed: Ensure database_url is not None before calling .lower()
+        if self.database_url and 'sqlite' in self.database_url.lower():
             logger.info("SQLite detected - skipping TimescaleDB setup")
             return
         
@@ -426,3 +430,5 @@ if __name__ == "__main__":
         print(f"Database initialization failed: {e}")
         import traceback
         traceback.print_exc()
+
+

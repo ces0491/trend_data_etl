@@ -70,45 +70,47 @@ def validate_python_version() -> ValidationResult:
     print(f"✅ Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
     return ValidationResult(True, f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
 
+
 def validate_required_packages() -> ValidationResult:
     """Validate that required Python packages are installed"""
     print("\n🔍 Validating required packages...")
     
     # Core packages that must be available
+    # Format: (import_name, package_name, description)
     required_packages = [
-        ("fastapi", "FastAPI web framework"),
-        ("uvicorn", "ASGI server"),
-        ("sqlalchemy", "Database ORM"),
-        ("pandas", "Data processing"),
-        ("python_dotenv", "Environment configuration"),
-        ("chardet", "Character encoding detection"),
-        ("dateutil", "Date parsing"),
-        ("openpyxl", "Excel file support"),
-        ("psycopg2", "PostgreSQL driver (install as psycopg2-binary)")
+        ("fastapi", "fastapi", "FastAPI web framework"),
+        ("uvicorn", "uvicorn", "ASGI server"),
+        ("sqlalchemy", "sqlalchemy", "Database ORM"),
+        ("pandas", "pandas", "Data processing"),
+        ("dotenv", "python-dotenv", "Environment configuration"),  # Fixed: import 'dotenv', not 'python_dotenv'
+        ("chardet", "chardet", "Character encoding detection"),
+        ("dateutil", "python-dateutil", "Date parsing"),
+        ("openpyxl", "openpyxl", "Excel file support"),
+        ("psycopg2", "psycopg2-binary", "PostgreSQL driver (install as psycopg2-binary)")
     ]
     
     # Optional packages that enhance functionality
     optional_packages = [
-        ("xlrd", "Legacy Excel support"),
-        ("requests", "HTTP client"),
+        ("xlrd", "xlrd", "Legacy Excel support"),
+        ("requests", "requests", "HTTP client"),
     ]
     
     failed_required = []
     failed_optional = []
     
     # Test required packages
-    for package_name, description in required_packages:
+    for import_name, package_name, description in required_packages:
         try:
-            __import__(package_name)
+            __import__(import_name)
             print(f"✅ {package_name} ({description})")
         except ImportError:
             failed_required.append((package_name, description))
             print(f"❌ {package_name}: {description}")
     
     # Test optional packages
-    for package_name, description in optional_packages:
+    for import_name, package_name, description in optional_packages:
         try:
-            __import__(package_name)
+            __import__(import_name)
             print(f"✅ {package_name} ({description}) - optional")
         except ImportError:
             failed_optional.append((package_name, description))
@@ -118,10 +120,7 @@ def validate_required_packages() -> ValidationResult:
         # Provide specific installation instructions for failed packages
         install_suggestions = []
         for pkg, desc in failed_required:
-            if pkg == "psycopg2":
-                install_suggestions.append("pip install psycopg2-binary")
-            else:
-                install_suggestions.append(f"pip install {pkg}")
+            install_suggestions.append(f"pip install {pkg}")
         
         return ValidationResult(
             False,
@@ -451,20 +450,25 @@ def validate_sample_data_processing() -> ValidationResult:
     print("\n🔍 Validating sample data processing...")
     
     try:
-        # Create temporary test data
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.tsv', delete=False) as tmp_file:
-            test_data = "artist_name\ttrack_name\tstreams\tdate\n"
-            test_data += "Test Artist\tTest Song\t1000\t2024-01-01\n"
-            test_data += "Another Artist\tAnother Song\t2000\t2024-01-02\n"
-            tmp_file.write(test_data)
-            tmp_file_path = tmp_file.name
+        # Create temporary test data with recognizable platform filename
+        temp_dir = Path(tempfile.gettempdir()) / "streaming_test"
+        temp_dir.mkdir(exist_ok=True)
+        
+        # Create a test file with Spotify platform pattern
+        test_file = temp_dir / "spo-spotify_validation_test.tsv"
+        
+        test_data = "artist_name\ttrack_name\tstreams\tdate\n"
+        test_data += "Test Artist\tTest Song\t1000\t2024-01-01\n"
+        test_data += "Another Artist\tAnother Song\t2000\t2024-01-02\n"
+        
+        test_file.write_text(test_data, encoding='utf-8')
         
         try:
             # Try to use our enhanced parser
             try:
                 from etl.parsers.enhanced_parser import EnhancedETLParser
                 parser = EnhancedETLParser()
-                result = parser.parse_file(Path(tmp_file_path))
+                result = parser.parse_file(test_file)
                 
                 if hasattr(result, 'success') and result.success:
                     records_count = getattr(result, 'records_parsed', 0)
@@ -477,7 +481,7 @@ def validate_sample_data_processing() -> ValidationResult:
             except ImportError:
                 # Fallback: test with pandas directly
                 import pandas as pd
-                df = pd.read_csv(tmp_file_path, sep='\t')
+                df = pd.read_csv(test_file, sep='\t')
                 
                 if len(df) == 2 and 'artist_name' in df.columns:
                     print("✅ Sample data parsing successful (using pandas fallback)")
@@ -488,7 +492,8 @@ def validate_sample_data_processing() -> ValidationResult:
         finally:
             # Clean up temporary file
             try:
-                os.unlink(tmp_file_path)
+                test_file.unlink()
+                temp_dir.rmdir()
             except:
                 pass  # Cleanup failure is not critical
                 

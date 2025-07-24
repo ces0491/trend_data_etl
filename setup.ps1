@@ -37,6 +37,10 @@ function Show-Help {
 }
 
 function Initialize-Environment {
+    param(
+        [switch]$ProductionOnly
+    )
+    
     Write-Host "Setting up development environment..." -ForegroundColor Yellow
 
     # Check Python version
@@ -59,15 +63,40 @@ function Initialize-Environment {
     & .\venv\Scripts\Activate.ps1
 
     # Install dependencies
-    Write-Host "Installing dependencies..." -ForegroundColor Yellow
+    Write-Host "Installing production dependencies..." -ForegroundColor Yellow
     pip install -r requirements.txt
 
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "✅ Dependencies installed successfully" -ForegroundColor Green
-    } else {
-        Write-Host "❌ Failed to install dependencies" -ForegroundColor Red
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "❌ Failed to install production dependencies" -ForegroundColor Red
         exit 1
     }
+
+    # Install dev dependencies unless production-only flag is set
+    if (-not $ProductionOnly) {
+        if (Test-Path "requirements-dev.txt") {
+            Write-Host "Installing development dependencies..." -ForegroundColor Yellow
+            Write-Host "  📦 Enhanced debugging (ipython, jupyter)" -ForegroundColor Gray
+            Write-Host "  🧪 Testing tools (pytest extensions)" -ForegroundColor Gray
+            Write-Host "  🔍 Code quality (pre-commit, bandit, safety)" -ForegroundColor Gray
+            Write-Host "  📊 Database tools (sqlite-utils, pgcli)" -ForegroundColor Gray
+            Write-Host "  📚 Documentation (sphinx, mkdocs)" -ForegroundColor Gray
+            
+            pip install -r requirements-dev.txt
+            
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "✅ Development dependencies installed successfully" -ForegroundColor Green
+            } else {
+                Write-Host "⚠️  Some development dependencies failed to install" -ForegroundColor Yellow
+                Write-Host "   This won't affect core functionality" -ForegroundColor Gray
+            }
+        } else {
+            Write-Host "⚠️  requirements-dev.txt not found, skipping dev dependencies" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "🏭 Production-only mode: skipping development dependencies" -ForegroundColor Cyan
+    }
+
+    Write-Host "✅ Dependencies installed successfully" -ForegroundColor Green
 
     # Setup environment file
     if (-not (Test-Path ".env")) {
@@ -97,6 +126,17 @@ API_PORT=8000
 
     Write-Host ""
     Write-Host "🚀 Setup complete!" -ForegroundColor Green
+    
+    if (-not $ProductionOnly) {
+        Write-Host "📋 Development tools now available:" -ForegroundColor Cyan
+        Write-Host "   • ipython - Enhanced Python shell" -ForegroundColor Gray
+        Write-Host "   • jupyter notebook - Interactive development" -ForegroundColor Gray
+        Write-Host "   • pytest --cov - Testing with coverage" -ForegroundColor Gray
+        Write-Host "   • sqlite-utils - Database inspection" -ForegroundColor Gray
+        Write-Host "   • pre-commit - Git hooks for code quality" -ForegroundColor Gray
+        Write-Host ""
+    }
+    
     Write-Host "Next steps:" -ForegroundColor Yellow
     Write-Host "  1. .\setup.ps1 db-sqlite     # Setup local database"
     Write-Host "  2. .\setup.ps1 demo          # Run quick demo"
